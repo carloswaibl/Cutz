@@ -1,0 +1,42 @@
+{
+  "bookshelf": {
+    "sheetsUsed": 3,
+    "wastePct": 0.048642837946788475,
+    "unplacedCount": 0
+  },
+  "cabinet-carcass": {
+    "sheetsUsed": 5,
+    "wastePct": 0.10232518140284874,
+    "unplacedCount": 0
+  },
+  "closet-organizer": {
+    "sheetsUsed": 3,
+    "wastePct": 0.027680730986293978,
+    "unplacedCount": 0
+  },
+  "drawer-boxes": {
+    "sheetsUsed": 3,
+    "wastePct": 0.09787691480784733,
+    "unplacedCount": 0
+  },
+  "grain-locked-panels": {
+    "sheetsUsed": 3,
+    "wastePct": 0.03466809997312548,
+    "unplacedCount": 0
+  },
+  "mixed-stock": {
+    "sheetsUsed": 3,
+    "wastePct": 0.03380811609782319,
+    "unplacedCount": 0
+  },
+  "tight-fit": {
+    "sheetsUsed": 1,
+    "wastePct": 0.006500244140624667,
+    "unplacedCount": 0
+  },
+  "workbench-cabinet": {
+    "sheetsUsed": 3,
+    "wastePct": 0.04273044880408494,
+    "unplacedCount": 0
+  }
+}
