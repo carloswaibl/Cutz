@@ -1,0 +1,39 @@
+{
+  "name": "closet-organizer",
+  "description": "A closet tower system in 18mm white melamine: 6 uprights 47-1/4\" x 15-3/4\" and 18 shelves 31-3/4\" x 15-3/4\". Melamine has no grain, so every part may turn. Hand-checked layout on usable 2430 x 1210, three 400mm rows per sheet: three rows of [upright x 2] = 2403, six rows of [shelf x 3] = 2424. Nine rows fill three sheets exactly, 2.8% waste at a perfect pack. Stresses high quantity and heavy repetition.",
+  "role": "benchmark",
+  "materials": [
+    { "id": "mel18", "name": "18mm white melamine", "thickness": 18, "hasGrain": false }
+  ],
+  "parts": [
+    {
+      "id": "upright",
+      "label": "Upright",
+      "width": 1200,
+      "height": 400,
+      "qty": 6,
+      "materialId": "mel18",
+      "rotationPolicy": "free90"
+    },
+    {
+      "id": "shelf",
+      "label": "Shelf",
+      "width": 806,
+      "height": 400,
+      "qty": 18,
+      "materialId": "mel18",
+      "rotationPolicy": "free90"
+    }
+  ],
+  "stock": [
+    {
+      "id": "sheet",
+      "materialId": "mel18",
+      "width": 2440,
+      "height": 1220,
+      "qty": 4,
+      "grainAxis": "x"
+    }
+  ],
+  "config": { "kerf": 3, "edgeTrim": 5, "seed": 1 }
+}

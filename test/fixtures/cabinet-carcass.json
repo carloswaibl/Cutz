@@ -1,0 +1,64 @@
+{
+  "name": "cabinet-carcass",
+  "description": "Eight wall cabinet carcasses in one material, 640 wide x 350 deep x 806 tall (25-1/4\" x 13-3/4\" x 31-3/4\"). The point of this fixture is the spread of part sizes competing for the same sheets: 604 x 806 backs down to 604 x 150 rails. Sides and backs are grain-locked because they show. Hand-checked banding on usable 2430 x 1210, with every band filling its full width: an 806 band holds [back x 4] = 2425, a 350 band holds [side x 3] = 2424 or [604-wide part x 4] = 2425, a 150 band holds [rail x 4] = 2425. Two sheets banded 806 + 350 = 1159, three banded 350 x 3 + 150 = 1209. Five sheets, 10.2% waste at a perfect pack.",
+  "role": "benchmark",
+  "materials": [{ "id": "ply18", "name": "18mm birch ply", "thickness": 18, "hasGrain": true }],
+  "parts": [
+    {
+      "id": "side",
+      "label": "Side",
+      "width": 806,
+      "height": 350,
+      "qty": 16,
+      "materialId": "ply18",
+      "rotationPolicy": "locked"
+    },
+    {
+      "id": "back",
+      "label": "Back",
+      "width": 604,
+      "height": 806,
+      "qty": 8,
+      "materialId": "ply18",
+      "rotationPolicy": "locked"
+    },
+    {
+      "id": "top-bottom",
+      "label": "Top / bottom",
+      "width": 604,
+      "height": 350,
+      "qty": 16,
+      "materialId": "ply18",
+      "rotationPolicy": "free90"
+    },
+    {
+      "id": "shelf",
+      "label": "Shelf",
+      "width": 604,
+      "height": 350,
+      "qty": 4,
+      "materialId": "ply18",
+      "rotationPolicy": "free90"
+    },
+    {
+      "id": "rail",
+      "label": "Rail",
+      "width": 604,
+      "height": 150,
+      "qty": 8,
+      "materialId": "ply18",
+      "rotationPolicy": "free90"
+    }
+  ],
+  "stock": [
+    {
+      "id": "sheet",
+      "materialId": "ply18",
+      "width": 2440,
+      "height": 1220,
+      "qty": 7,
+      "grainAxis": "x"
+    }
+  ],
+  "config": { "kerf": 3, "edgeTrim": 5, "seed": 1 }
+}

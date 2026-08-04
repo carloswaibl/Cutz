@@ -1,0 +1,39 @@
+{
+  "name": "grain-locked-panels",
+  "description": "HELD OUT - runs in the bench and must clear the waste bar, but no heuristic or constant may be tuned by looking at it. Oak-veneered ply door and drawer panels, every one grain-locked because the veneer shows on every face. The solver has no rotation to trade with anywhere. Hand-checked layout on usable 2430 x 1210: a tall sheet is one 1200mm row of [tall panel 480 x 5] = 2412; the short sheet is two 596mm rows of [short panel 480 x 5] = 2412. Three sheets, 3.5% waste at a perfect pack.",
+  "role": "held-out",
+  "materials": [
+    { "id": "oak-ply", "name": "18mm oak-veneered ply", "thickness": 18, "hasGrain": true }
+  ],
+  "parts": [
+    {
+      "id": "tall-panel",
+      "label": "Tall door panel",
+      "width": 480,
+      "height": 1200,
+      "qty": 10,
+      "materialId": "oak-ply",
+      "rotationPolicy": "locked"
+    },
+    {
+      "id": "short-panel",
+      "label": "Short door panel",
+      "width": 480,
+      "height": 596,
+      "qty": 10,
+      "materialId": "oak-ply",
+      "rotationPolicy": "locked"
+    }
+  ],
+  "stock": [
+    {
+      "id": "sheet",
+      "materialId": "oak-ply",
+      "width": 2440,
+      "height": 1220,
+      "qty": 4,
+      "grainAxis": "y"
+    }
+  ],
+  "config": { "kerf": 3, "edgeTrim": 5, "seed": 1 }
+}

@@ -1,0 +1,29 @@
+{
+  "name": "insufficient-stock",
+  "description": "CORRECTNESS, excluded from the waste benchmark. Eleven identical 600 x 600 panels and one 4x8 sheet. The shortfall is arithmetic rather than a judgement of packing quality: with no edge trim and a 3mm kerf the sheet holds 2 across (600 x 2 + 3 = 1203 of 1220) and 4 down (600 x 4 + 3 x 3 = 2409 of 2440), so exactly 8 fit, with 17mm and 31mm to spare. A third column needs 1806mm and a fifth row 3012mm, so 8 is a hard ceiling and the remaining 3 must be reported exactly.",
+  "role": "correctness",
+  "materials": [{ "id": "ply18", "name": "18mm birch ply", "thickness": 18, "hasGrain": true }],
+  "parts": [
+    {
+      "id": "panel",
+      "label": "Panel",
+      "width": 600,
+      "height": 600,
+      "qty": 11,
+      "materialId": "ply18",
+      "rotationPolicy": "free90"
+    }
+  ],
+  "stock": [
+    {
+      "id": "sheet",
+      "materialId": "ply18",
+      "width": 2440,
+      "height": 1220,
+      "qty": 1,
+      "grainAxis": "x"
+    }
+  ],
+  "config": { "kerf": 3, "edgeTrim": 0, "seed": 1 },
+  "expectedUnplaced": [{ "partId": "panel", "qty": 3 }]
+}
