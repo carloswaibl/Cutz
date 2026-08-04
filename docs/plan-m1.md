@@ -523,9 +523,8 @@ Whatever tuning is needed to clear 15% on all eight benchmark fixtures, a short
 4. **Unlimited stock is not modelled.** `Stock.qty` is required and finite, so "I can buy as
    many sheets as I need" is expressed as a large `qty`. Fine for M1; M2's UI should decide
    whether to surface an explicit "unlimited" affordance.
-
+5. **M0 was skipped** (§2). Importer risk for M4/M5 remains unretired.
 6. **Fixture waste figures are a floor, not a promise.** The PR 3 table was produced by a
    throwaway row packer, not by the real solver. If PR 4's free-rect packer does *worse*
    than a naive shelf heuristic on a fixture, the packer is wrong, not the fixture. A
    fixture only gets redesigned if it turns out to be unreachable for a structural reason.
-5. **M0 was skipped** (§2). Importer risk for M4/M5 remains unretired.
