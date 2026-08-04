@@ -5,9 +5,16 @@
  * "how far apart are these". Implementing them twice is how a checker ends up
  * agreeing with the bug it exists to catch, so they live here once.
  *
+ * The two adapters at the bottom turn model objects into rectangles. They live
+ * here for the same reason: a packer and a checker that disagree about where a
+ * rotated part sits, or about how much of a sheet is usable, disagree about
+ * everything downstream.
+ *
  * All values are millimetres. Origin is top-left, x increases right, y
  * increases down - matching SVG, so rendering needs no coordinate flip.
  */
+
+import type { Part, Placement, Stock } from './types';
 
 export interface Rect {
   x: number;
@@ -97,4 +104,42 @@ export function clearance(a: Rect, b: Rect): number {
 /** True when the two rectangles share positive area. Touching edges do not count. */
 export function overlaps(a: Rect, b: Rect): boolean {
   return clearance(a, b) < -EPSILON;
+}
+
+// --- Model adapters ------------------------------------------------------
+
+/**
+ * The footprint a placed part occupies on its sheet, excluding kerf.
+ *
+ * `rotated` means the part is turned 90°, so its width and height swap. The
+ * placement's x/y is the top-left corner of that footprint either way.
+ */
+export function placementRect(part: Part, placement: Placement): Rect {
+  return {
+    x: placement.x,
+    y: placement.y,
+    width: placement.rotated ? part.height : part.width,
+    height: placement.rotated ? part.width : part.height,
+  };
+}
+
+/**
+ * The area of a sheet that may actually be packed into.
+ *
+ * Factory edges on sheet goods are often not square, so `edgeTrim` is cut off
+ * all four sides before anything is laid out. The trimmed-off material is still
+ * material the user bought, so it counts as waste - it just cannot hold a part.
+ *
+ * The result can be empty or negative-sized when the trim is larger than the
+ * sheet. `validate.ts` reports that as an input issue rather than clamping it,
+ * because silently packing into a sheet the user described as unusable hides
+ * the real mistake (usually a trim value entered in the wrong unit).
+ */
+export function usableArea(stock: Stock, edgeTrim: number): Rect {
+  return {
+    x: edgeTrim,
+    y: edgeTrim,
+    width: stock.width - 2 * edgeTrim,
+    height: stock.height - 2 * edgeTrim,
+  };
 }

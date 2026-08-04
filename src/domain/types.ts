@@ -77,6 +77,13 @@ export interface Placement {
 export interface Layout {
   stockInstanceId: string;
   placements: Placement[];
+  /**
+   * A fraction in 0..1, not a 0..100 percentage, despite the name.
+   *
+   * `1 - (placed part area on this sheet) / (full sheet area)`. Measured
+   * against the *full* sheet, not the usable area: edge trim is material the
+   * user bought and lost, so it counts as waste.
+   */
   wastePct: number;
 }
 
@@ -88,5 +95,12 @@ export interface UnplacedPart {
 export interface Result {
   layouts: Layout[];
   unplacedParts: UnplacedPart[];
+  /**
+   * A fraction in 0..1, same convention as `Layout.wastePct`.
+   *
+   * `1 - (all placed part area) / (full area of the sheets actually used)`.
+   * Stock instances that were never opened are excluded: owning ten sheets and
+   * using two is not 80% waste.
+   */
   totalWastePct: number;
 }

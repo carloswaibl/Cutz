@@ -368,15 +368,41 @@ Landed with 84 tests. Decisions made during the work, for reference by later PRs
 - `formatLength` nudges by one ULP before rounding: 590.55mm - exactly 23-1/4" - is stored
   as a double just below itself, so `toFixed(1)` would render it 590.5.
 
-**PR 2 - `feat/domain-validate` - NEXT**
+**PR 2 - `feat/domain-validate` - DONE**
 `validate.ts`: input validation and all six invariant checks, including the guillotine
 checker. Tested against **hand-built** layouts, not solver output - the checker must be
-trustworthy before anything is checked with it. Must include deliberately invalid cases:
-overlapping parts, parts separated by less than kerf, a part outside the trimmed area, an
-illegally rotated grain-locked part, a part on the wrong material, and a **pinwheel layout**
-(four parts rotationally arranged around a center) - the classic packing that has no
-overlaps and is not guillotine-cuttable. If the checker passes the pinwheel, the checker is
-broken. Also test that the recursion cap reports `'unverified'` rather than `'valid'`.
+trustworthy before anything is checked with it.
+
+Landed with 89 new tests (173 total). Decisions made during the work:
+
+- **`domain/instances.ts` is a new file**, owning the `` `${stockId}#${index}` `` convention
+  from §3.2 as `stockInstanceId` / `parseStockInstanceId`. The checker has to read instance
+  ids back, so the format needed one owner rather than being minted in `solver/instances.ts`
+  and re-derived here. PR 4 imports these instead of defining the format. `parseStockInstanceId`
+  splits at the **last** separator, and rejects non-canonical spellings like `s#007` so an id
+  is a stable name for a sheet.
+- **A seventh check was added: waste correctness.** `wastePct` and `totalWastePct` are
+  recomputed per §3.4 and compared. A wrong waste number cannot crash and no invariant would
+  catch it, and PR 5 freezes these numbers into `baseline.json` as if they were right.
+- **`Layout.wastePct` is a fraction in 0..1**, not a 0..100 percentage. The name says
+  otherwise; §3.4's formula is authoritative. Now documented on the type itself.
+- **`placementRect` and `usableArea` live in `geometry.ts`**, for the same reason the rest of
+  that file does: a packer and a checker that disagree about where a rotated part sits
+  disagree about everything downstream.
+- Two checks beyond the six that fall out of resolving references: a layout naming a stock
+  instance beyond the stock's `qty` (a sheet nobody owns), and two layouts for one sheet
+  (which would let each per-sheet check see half the parts and pass).
+- `unplacedParts` entries must have a positive integer `qty`. Otherwise invariant 6 balances
+  by cancellation - placing five of four parts and reporting minus one unplaced adds up.
+- Input issues carry a `severity`. Structural nonsense is an `error`; a part that simply
+  cannot be placed is a `warning`, because the solver runs fine and says so in `unplacedParts`.
+- The guillotine step cap is exposed as a parameter so the `'unverified'` path is tested
+  directly, rather than by constructing an adversarial layout that may stop being adversarial.
+- **Not tested: a crafted cut-level dead end** where the first candidate cut must be
+  abandoned for a later one. Every attempt collapsed into a layout that was either wholly
+  valid or wholly invalid. Covered instead by 120 randomly generated layouts built by
+  performing actual guillotine cuts (so the answer is known by construction), plus
+  permutation-invariance on the pinwheel, since candidate cuts are enumerated in part order.
 
 **PR 3 - `feat/solver-fixtures`**
 Fixture JSON files, typed loader, shape validation, plus `rng.ts` and its determinism tests.
@@ -425,7 +451,9 @@ Whatever tuning is needed to clear 15% on all eight benchmark fixtures, a short
 1. **`SolverConfig.effort`** (§3.6) - **approved**. Changes a type documented in `CLAUDE.md`;
    lands in PR 6, `CLAUDE.md` updated in PR 7.
 2. **`geometry.ts` is a new file** outside the documented directory listing (§3.1) -
-   **approved, landed in PR 1**. `CLAUDE.md` still to be updated in PR 7.
+   **approved, landed in PR 1**. `CLAUDE.md` still to be updated in PR 7. The same applies to
+   **`domain/instances.ts`**, landed in PR 2, and to the **seventh (waste) check**, which
+   `CLAUDE.md` currently describes as six invariants.
 3. **`npm run bench` changes meaning** from wall-clock benchmarking to waste benchmarking
    (§5) - **approved**. A semantic change to an existing documented command; lands in PR 5.
 4. **Unlimited stock is not modelled.** `Stock.qty` is required and finite, so "I can buy as
