@@ -349,11 +349,26 @@ zero flakiness. That is worth exploiting.
 
 `main` is never committed to directly. Each item is one branch, one squash-merged PR, CI green.
 
-**PR 1 - `feat/domain-geometry-units`**
+**PR 1 - `feat/domain-geometry-units` - DONE** ([#2](https://github.com/carloswaibl/Cutz/pull/2), merged as `b30de6c`)
 `geometry.ts` + `units.ts` + tests. No solver dependency. Fractional parse/format edge cases:
 `23-1/4`, `23 1/4`, `1/2`, `23"`, garbage input, values off the 1/16 grid, negative and zero.
 
-**PR 2 - `feat/domain-validate`**
+Landed with 84 tests. Decisions made during the work, for reference by later PRs:
+
+- `clearance(a, b)` in `geometry.ts` is the kerf primitive: it takes the **larger** of the
+  two axis gaps, since parts clearing each other on one axis need no cut on the other.
+  Placements are legal when `clearance >= kerf`. Invariant 1 in PR 2 is built on this.
+- `EPSILON` is 1e-6mm and is justified in practice, not theory - `4'` parses to
+  `1219.1999999999998`. Every dimension comparison in the packer and checker must go
+  through the tolerant helpers rather than `<=` / `===`.
+- `parseLength` accepts zero (a kerf of 0 is meaningful). **Per-field positivity checks are
+  PR 2's job**, not the parser's.
+- `parseLength` rejects combined feet-and-inches rather than parsing it, since reading
+  `4' 6"` as 4 feet would be plausible-looking and half a foot wrong.
+- `formatLength` nudges by one ULP before rounding: 590.55mm - exactly 23-1/4" - is stored
+  as a double just below itself, so `toFixed(1)` would render it 590.5.
+
+**PR 2 - `feat/domain-validate` - NEXT**
 `validate.ts`: input validation and all six invariant checks, including the guillotine
 checker. Tested against **hand-built** layouts, not solver output - the checker must be
 trustworthy before anything is checked with it. Must include deliberately invalid cases:
@@ -407,12 +422,12 @@ Whatever tuning is needed to clear 15% on all eight benchmark fixtures, a short
 
 ## 8. Open items
 
-1. **`SolverConfig.effort` needs approval** (§3.6) - it changes a type documented in
-   `CLAUDE.md`.
-2. **`geometry.ts` is a new file** outside the documented directory listing (§3.1). Called
-   out here; `CLAUDE.md` updated in PR 7.
+1. **`SolverConfig.effort`** (§3.6) - **approved**. Changes a type documented in `CLAUDE.md`;
+   lands in PR 6, `CLAUDE.md` updated in PR 7.
+2. **`geometry.ts` is a new file** outside the documented directory listing (§3.1) -
+   **approved, landed in PR 1**. `CLAUDE.md` still to be updated in PR 7.
 3. **`npm run bench` changes meaning** from wall-clock benchmarking to waste benchmarking
-   (§5). Intentional, but it is a semantic change to an existing documented command.
+   (§5) - **approved**. A semantic change to an existing documented command; lands in PR 5.
 4. **Unlimited stock is not modelled.** `Stock.qty` is required and finite, so "I can buy as
    many sheets as I need" is expressed as a large `qty`. Fine for M1; M2's UI should decide
    whether to surface an explicit "unlimited" affordance.
