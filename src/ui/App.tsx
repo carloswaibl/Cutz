@@ -1,4 +1,8 @@
+import { ConfigBar } from './components/ConfigBar';
 import { Header } from './components/Header';
+import { MaterialManager } from './components/MaterialManager';
+import { PartTable } from './components/PartTable';
+import { StockTable } from './components/StockTable';
 import { useCutListState } from './state/useCutListState';
 
 export function App() {
@@ -14,33 +18,84 @@ export function App() {
         onLoadPreset={state.loadPreset}
       />
 
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
-        {/* Placeholder container for PR 2-4 components */}
-        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-8 backdrop-blur-sm shadow-xl flex flex-col items-center justify-center text-center my-6">
-          <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center text-2xl mb-4">
-            🛠️
-          </div>
-          <h2 className="text-xl font-bold text-slate-100 mb-2">
-            Tailwind Design System & State Management Active
-          </h2>
-          <p className="text-slate-400 text-sm max-w-md mb-6">
-            Current project loaded:{' '}
-            <span className="text-amber-400 font-semibold">{state.parts.length} parts</span> across{' '}
-            <span className="text-amber-400 font-semibold">{state.stock.length} stock sheets</span>.
-            Active unit system:{' '}
-            <span className="text-emerald-400 font-semibold">{state.displayUnit}</span>.
-          </p>
+      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 flex flex-col gap-6">
+        {/* Saw & Solver Configuration Bar */}
+        <ConfigBar
+          config={state.config}
+          displayUnit={state.displayUnit}
+          fractionDenominator={fractionDenominatorFromUnit(state.displayUnit)}
+          onConfigChange={state.setConfig}
+          onReSolve={state.reSolve}
+        />
 
-          <div className="flex flex-wrap justify-center gap-3">
-            <span className="px-3 py-1 bg-slate-800 text-slate-300 text-xs font-mono rounded-lg border border-slate-700">
-              PR 1 Complete: Tailwind CSS v4 + UI State
-            </span>
-            <span className="px-3 py-1 bg-amber-500/20 text-amber-300 text-xs font-mono rounded-lg border border-amber-500/30">
-              Next: PR 2 (Part, Stock & Material Tables)
-            </span>
+        {/* Material Manager */}
+        <MaterialManager
+          materials={state.materials}
+          displayUnit={state.displayUnit}
+          fractionDenominator={fractionDenominatorFromUnit(state.displayUnit)}
+          selectedMaterialId={state.selectedMaterialId}
+          onSelectMaterialFilter={state.setSelectedMaterialId}
+          onAddMaterial={state.addMaterial}
+          onUpdateMaterial={state.updateMaterial}
+          onDeleteMaterial={state.deleteMaterial}
+        />
+
+        {/* Main Grid: Parts & Stock Entry */}
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+          <div className="xl:col-span-7 flex flex-col gap-6">
+            <PartTable
+              parts={state.parts}
+              materials={state.materials}
+              displayUnit={state.displayUnit}
+              fractionDenominator={fractionDenominatorFromUnit(state.displayUnit)}
+              selectedMaterialId={state.selectedMaterialId}
+              hoveredPartId={state.hoveredPartId}
+              onHoverPart={state.setHoveredPartId}
+              onAddPart={state.addPart}
+              onUpdatePart={state.updatePart}
+              onDeletePart={state.deletePart}
+              onDuplicatePart={state.duplicatePart}
+              onClearParts={state.clearParts}
+            />
+          </div>
+
+          <div className="xl:col-span-5 flex flex-col gap-6">
+            <StockTable
+              stock={state.stock}
+              materials={state.materials}
+              displayUnit={state.displayUnit}
+              fractionDenominator={fractionDenominatorFromUnit(state.displayUnit)}
+              selectedMaterialId={state.selectedMaterialId}
+              onAddStock={state.addStock}
+              onUpdateStock={state.updateStock}
+              onDeleteStock={state.deleteStock}
+            />
+
+            {/* Quick Solver Status Indicator */}
+            {state.result && (
+              <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 flex items-center justify-between text-xs font-mono text-slate-400">
+                <div className="flex items-center gap-2">
+                  <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>Layout solver active</span>
+                </div>
+                <div>
+                  <span>
+                    {state.result.layouts.length} sheet(s) used | Waste:{' '}
+                    <span className="text-emerald-400 font-bold">
+                      {(state.result.totalWastePct * 100).toFixed(1)}%
+                    </span>
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </main>
     </div>
   );
+}
+
+function fractionDenominatorFromUnit(unit: string): number {
+  if (unit === 'imperial-fraction') return 16;
+  return 1;
 }
