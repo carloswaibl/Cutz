@@ -1,0 +1,75 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.6/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "includes": ["**", "!dist", "!node_modules", "!coverage"]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single",
+      "trailingCommas": "all",
+      "semicolons": "always"
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "suspicious": {
+        "noExplicitAny": "error"
+      },
+      "style": {
+        "useImportType": "error"
+      }
+    }
+  },
+  "plugins": ["./biome-plugins/no-math-random.grit"],
+  "overrides": [
+    {
+      "includes": ["src/domain/**/*.ts", "src/solver/**/*.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedGlobals": {
+              "level": "error",
+              "options": {
+                "deniedGlobals": {
+                  "window": "domain/ and solver/ must stay DOM-free.",
+                  "document": "domain/ and solver/ must stay DOM-free.",
+                  "navigator": "domain/ and solver/ must stay DOM-free.",
+                  "localStorage": "domain/ and solver/ must stay DOM-free.",
+                  "indexedDB": "domain/ and solver/ must stay DOM-free."
+                }
+              }
+            },
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["react", "react-dom", "react/**", "react-dom/**"],
+                    "message": "domain/ and solver/ must stay headless."
+                  },
+                  {
+                    "group": ["**/ui/**"],
+                    "message": "domain/ and solver/ must not depend on the UI layer."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

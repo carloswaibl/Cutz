@@ -1,0 +1,13 @@
+// The solver must be deterministic given the same inputs and seed, so that a
+// layout a user saved or printed can be reproduced exactly. Math.random() would
+// break that silently - the layout would still be valid, just different every
+// run, which no test would catch. Use the seeded PRNG in src/solver/rng.ts.
+//
+// Biome has no native no-restricted-properties equivalent, so this is a GritQL
+// plugin. Plugins apply repo-wide rather than per-directory, which is fine here:
+// nothing else in this codebase has a legitimate reason to call Math.random()
+// either.
+`$fn($args)` where {
+  $fn <: `Math.random`,
+  register_diagnostic(span=$fn, message="Use the seeded PRNG in src/solver/rng.ts - the solver must be deterministic.", severity="error")
+}

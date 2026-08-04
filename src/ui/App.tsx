@@ -9,8 +9,8 @@ export function App() {
       <header className="app__header">
         <h1>Cutz</h1>
         <p className="app__tagline">
-          Cut list optimizer for woodworkers. Runs entirely in your browser -
-          nothing is uploaded anywhere.
+          Cut list optimizer for woodworkers. Runs entirely in your browser - nothing is uploaded
+          anywhere.
         </p>
       </header>
 

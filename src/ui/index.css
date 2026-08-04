@@ -6,7 +6,7 @@
   --border: #e2dcd2;
   --accent: #a2551f;
 
-  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   line-height: 1.55;
   color: var(--text);
   background-color: var(--bg);
