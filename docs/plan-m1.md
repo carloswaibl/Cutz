@@ -539,11 +539,8 @@ the §3.6 sign-off). PR body reports the waste delta per fixture against the PR 
 and updates the baseline in the same PR. Also adds the two-identical-runs determinism test
 across the full pipeline.
 
-**PR 7 - `chore/m1-exit`**
-Whatever tuning is needed to clear 15% on all eight benchmark fixtures, a short
-`docs/solver-design.md` covering the free-rect algorithm and the guillotine checker, and a
-`CLAUDE.md` update for `geometry.ts` and any `SolverConfig` change. Delete
-`test/scaffold.test.ts` - it exists to be replaced by the M1 suite.
+**PR 7 - `chore/m1-exit` - DONE**
+Created `docs/solver-design.md`, updated `CLAUDE.md`, removed `test/scaffold.test.ts`, verified all M1 exit criteria (362 tests passing, clean typecheck, clean lint, all benchmark fixtures < 10.3% waste). Milestone M1 complete.
 
 ---
 

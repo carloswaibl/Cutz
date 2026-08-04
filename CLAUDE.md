@@ -65,14 +65,17 @@ branch, lands via PR, and CI must be green to merge.
 ```
 src/
   domain/          # types + pure domain logic, ZERO dependencies on React or DOM
-    types.ts       # Part, Stock, Material, Placement, Layout, Result
+    types.ts       # Part, Stock, Material, Placement, Layout, Result, SolverConfig
     units.ts       # unit conversion + fractional inch parsing/formatting
     validate.ts    # input validation, invariant checks
+    geometry.ts    # Rect helpers: area, contains, separation, clearance, intersects
+    instances.ts   # Part and Stock instance expansion utilities
   solver/
     types.ts       # Solver interface
     guillotine/    # v1 engine: free-rectangle guillotine packer
-    improve.ts     # randomized restart / annealing wrapper
-    rng.ts         # seeded PRNG
+    improve.ts     # randomized restart + hill-climbing wrapper
+    rng.ts         # seeded PRNG (mulberry32)
+    objective.ts   # candidate layout scoring
   import/
     svg/           # SVG -> Part[]
     stl/           # STL -> Part
@@ -87,7 +90,9 @@ test/
   fixtures/        # realistic projects: bookshelf, cabinet carcass, drawer boxes
   files/           # real-world SVG/STL samples from Inkscape, Illustrator, Fusion
 docs/
-  project-plan.md
+  project-plan.md  # product roadmap and overall milestone breakdown
+  plan-m1.md       # M1 implementation plan, scope, and PR sequence
+  solver-design.md # M1 engine design, algorithms, invariants, and benchmarks
 ```
 
 `src/domain/` and `src/solver/` must stay pure and headless — testable in Node with no DOM. Do not import React, browser globals, or anything from `src/ui/` into them.
@@ -125,10 +130,13 @@ interface Stock {
   grainAxis: 'x' | 'y';
 }
 
+type SolverEffort = 'fast' | 'balanced' | 'thorough';
+
 interface SolverConfig {
   kerf: number;
   edgeTrim: number;
   seed: number;
+  effort?: SolverEffort; // defaults to 'balanced'
 }
 
 interface Placement {
@@ -205,6 +213,7 @@ Every `Result` must satisfy these. `domain/validate.ts` checks them; the test su
 4. Every layout is guillotine-decomposable — it can be produced by a sequence of full edge-to-edge cuts.
 5. A part is only placed on stock with a matching `materialId`.
 6. Placed quantity per part never exceeds requested `qty`. Any shortfall appears in `unplacedParts`.
+7. Waste percentages (`wastePct` and `totalWastePct`) recomputed per formula match the reported result numbers.
 
 **The solver must be deterministic given the same inputs and seed.** Use the seeded PRNG in `solver/rng.ts`. Never call `Math.random()` anywhere in `solver/`.
 
