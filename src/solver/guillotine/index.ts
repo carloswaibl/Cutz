@@ -55,7 +55,9 @@ export const GUILLOTINE_DEFAULTS: PackOptions = {
  * one material, so no sheet is ever contested between two groups and the
  * instance ids stay globally unique without any coordination.
  */
-function groupByMaterial<T extends { materialId: string }>(items: readonly T[]): Map<string, T[]> {
+export function groupByMaterial<T extends { materialId: string }>(
+  items: readonly T[],
+): Map<string, T[]> {
   const groups = new Map<string, T[]>();
   for (const item of items) {
     const group = groups.get(item.materialId);
@@ -71,7 +73,7 @@ function groupByMaterial<T extends { materialId: string }>(items: readonly T[]):
  * Reported in the order the parts were declared rather than the order the packer
  * gave up on them, so the shortfall reads like the user's own part list.
  */
-function summariseUnplaced(
+export function summariseUnplaced(
   unplaced: readonly PartInstance[],
   parts: readonly Part[],
 ): UnplacedPart[] {
