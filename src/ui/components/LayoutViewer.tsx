@@ -101,7 +101,7 @@ export function LayoutViewer({
           minScale={0.1}
           maxScale={10}
           centerOnInit
-          wheel={{ step: 0.01, smoothStep: 0.001 }}
+          wheel={{ step: 0.01 }}
           pinch={{ step: 1 }}
         >
           {({ zoomIn, zoomOut, resetTransform }) => (
