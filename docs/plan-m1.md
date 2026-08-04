@@ -472,11 +472,62 @@ exactly, which is independent confirmation of those numbers:
 | `tight-fit` | 1 | 0.7% |
 | `workbench-cabinet` | 3 | 4.3% |
 
-**PR 4 - `feat/guillotine-greedy`**
-`instances.ts`, `freeRects.ts`, `pack.ts`, `guillotine/index.ts`. Single fixed heuristic and
-split rule, fully deterministic, no randomness. Every fixture solved and run through all six
-invariant checks. PR reports the greedy waste number per fixture - this is the number the
-improvement pass has to beat.
+**PR 4 - `feat/guillotine-greedy` - DONE**
+`instances.ts`, `freeRects.ts`, `pack.ts`, `guillotine/index.ts`. Fully deterministic, no
+randomness. Every fixture solved and run through all seven checks.
+
+Landed with 113 new tests (341 total). Greedy waste per fixture, which is the number PR 6's
+improvement pass has to beat:
+
+| Fixture | Sheets | Waste | vs PR 3 floor |
+|---|---|---|---|
+| `bookshelf` | 3 | 4.9% | = |
+| `cabinet-carcass` | 5 | 10.2% | = |
+| `closet-organizer` | 3 | 2.8% | = |
+| `drawer-boxes` | 3 | 9.8% | = |
+| `grain-locked-panels` | 3 | 3.5% | = |
+| `mixed-stock` | 3 | 3.4% | = |
+| `tight-fit` | 1 | 0.7% | = |
+| `workbench-cabinet` | 3 | 4.3% | = |
+
+Every benchmark and held-out fixture lands **exactly on the hand-checked perfect pack recorded
+in its own `description`**, and therefore under the 15% bar, with zero unplaced parts. Both
+correctness fixtures reproduce their declared shortfall exactly. Decisions made during the work:
+
+- **The split rule is the knob that matters, and the plan's implied default was the wrong
+  one.** §3.3 lists four split rules without picking one; the obvious first choice,
+  `shorter-leftover` (Jylänki's SLAS), costs a whole extra sheet on `drawer-boxes` - 32.3%
+  against the naive row packer's 9.8%, which §8 item 6 defines as a broken packer rather than
+  a hard fixture. `longer-leftover` runs the through-cut across the *larger* leftover, so a
+  placed part leaves one full-width strip instead of two fragments. That is how a sheet is
+  actually broken down at a saw - rip a strip the depth of a row, then crosscut parts out of
+  it - and it reproduces the hand-checked row layouts exactly. Chosen by sweeping all 36
+  combinations against the **six benchmark fixtures only**; the two held-out fixtures were not
+  in the sweep and are the check on the choice, not an input to it. They both land on their
+  perfect pack too.
+- **All knob options are implemented, one combination is pinned.** `PartOrder`,
+  `FitHeuristic` and `SplitRule` are complete in `freeRects.ts`; `GUILLOTINE_DEFAULTS` pins
+  `area-desc` / `best-area` / `longer-leftover` and nothing samples. PR 6 adds selection
+  logic, not packing code. The sweep above is only possible because of this.
+- **`best-area` cannot distinguish a part's two orientations** - the leftover *area* is the
+  same either way - so under it a rotation is only ever chosen when the upright orientation
+  does not fit at all. Pinned by a test rather than fixed: it costs nothing on any fixture,
+  and PR 6 gets orientation sensitivity for free by sampling the side-fit heuristics.
+- **`solve()` throws `SolverInputError` (`solver/errors.ts`) on an `error`-severity issue**,
+  keeping `Solver.solve`'s documented signature. Warnings are not fatal - a part too large for
+  any sheet is answered honestly in `unplacedParts` rather than with a refusal.
+- **`Stock.grainAxis` is not consulted by the packer.** See §8 item 7.
+- **`totalWastePct` is 0, not 1, when nothing was cut.** A user with parts but no matching
+  stock should not be told they wasted a sheet they never owned.
+- The waste sums are accumulated in the same order and with the same operations that
+  `checkResult` uses to recompute them, so the seventh check compares bit-identical numbers
+  rather than relying on its 1e-9 tolerance to absorb a reassociated sum.
+- Free rectangles are pruned against a bound computed **once per sheet** from the parts still
+  to be offered. As parts get placed the true minimum only grows, so a bound taken at the
+  start of the pass can never prune a rectangle something still needs.
+- Sheets are opened largest-usable-area-first and only when a part fits no open sheet, so an
+  unused sheet never appears as an empty layout - which would otherwise make `totalWastePct`
+  count material that was never cut.
 
 **PR 5 - `feat/bench-harness`**
 Bench runner, `baseline.json` seeded from PR 4's greedy output, `package.json` script change,
@@ -528,3 +579,19 @@ Whatever tuning is needed to clear 15% on all eight benchmark fixtures, a short
    throwaway row packer, not by the real solver. If PR 4's free-rect packer does *worse*
    than a naive shelf heuristic on a fixture, the packer is wrong, not the fixture. A
    fixture only gets redesigned if it turns out to be unreachable for a structural reason.
+   **This fired in PR 4** and found the split-rule choice; the floor is now pinned as a test.
+7. **`Stock.grainAxis` is not consulted by the solver** - noted in PR 4, not decided by it.
+   The model already committed to this before the packer existed: `validate.ts` invariant 3
+   checks only `rotated -> free90`, and both `grainAxis: 'y'` fixtures author their parts in
+   sheet-frame orientation and have hand-checked layouts that only work if the axis is
+   ignored (`tight-fit` is grain-locked on a `'y'` sheet and needs its parts upright;
+   `grain-locked-panels` runs its 1200mm panel length along `y`). So `rotationPolicy` is a
+   statement about the part *as laid out on the sheet*, and `grainAxis` is metadata for
+   display and for v2. Honouring it would invalidate two fixtures and landed PR 2 code.
+   Worth revisiting when M2's UI has to explain grain to a user, not before.
+8. **The M1 waste bar is already met by the greedy pass alone**, on all eight benchmark and
+   held-out fixtures, at the hand-checked perfect pack. PR 6's improvement pass therefore has
+   very little room to show a gain on this fixture set, and PR 7's tuning budget should be
+   close to zero. That is the "chasing solver quality indefinitely" anti-pattern arriving
+   early; the honest response is to let PR 6 land small and stop, not to make the fixtures
+   harder so the improvement pass has something to prove.
