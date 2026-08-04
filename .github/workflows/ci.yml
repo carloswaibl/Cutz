@@ -38,6 +38,9 @@ jobs:
       - name: Test
         run: npm run test:run
 
+      - name: Bench
+        run: npm run bench
+
       # Also the source of the deployed artifact - the site is never built
       # separately from the build that CI verified.
       - name: Build
