@@ -1,0 +1,37 @@
+{
+  "name": "bookshelf",
+  "description": "Three matching 5ft bookshelves in 18mm birch ply. Sides 63\" x 11-3/4\", shelves 30-3/4\" x 11-3/4\". Sides are grain-locked because their outer face shows; shelves are edge-banded so they may turn. Hand-checked layout on usable 2430 x 1210, four 300mm rows per sheet: six rows of [side 1600 + shelf 780] = 2383, six rows of [shelf x 3] = 2346. Twelve rows fill three sheets exactly, 4.9% waste at a perfect pack.",
+  "role": "benchmark",
+  "materials": [{ "id": "ply18", "name": "18mm birch ply", "thickness": 18, "hasGrain": true }],
+  "parts": [
+    {
+      "id": "side",
+      "label": "Side",
+      "width": 1600,
+      "height": 300,
+      "qty": 6,
+      "materialId": "ply18",
+      "rotationPolicy": "locked"
+    },
+    {
+      "id": "shelf",
+      "label": "Shelf",
+      "width": 780,
+      "height": 300,
+      "qty": 24,
+      "materialId": "ply18",
+      "rotationPolicy": "free90"
+    }
+  ],
+  "stock": [
+    {
+      "id": "sheet",
+      "materialId": "ply18",
+      "width": 2440,
+      "height": 1220,
+      "qty": 4,
+      "grainAxis": "x"
+    }
+  ],
+  "config": { "kerf": 3, "edgeTrim": 5, "seed": 1 }
+}

@@ -1,0 +1,38 @@
+{
+  "name": "oversized-part",
+  "description": "CORRECTNESS, excluded from the waste benchmark. A worktop 2500 x 1300 that is larger than a 4x8 sheet in both axes, so no rotation saves it, alongside twelve shelves that pack cleanly into one sheet. The solver must place everything it can, report the worktop in unplacedParts, and not crash or drop the shelves on the way. validateInputs is expected to warn part-too-large for the worktop before the solver ever runs.",
+  "role": "correctness",
+  "materials": [{ "id": "ply18", "name": "18mm birch ply", "thickness": 18, "hasGrain": true }],
+  "parts": [
+    {
+      "id": "worktop",
+      "label": "Worktop",
+      "width": 2500,
+      "height": 1300,
+      "qty": 1,
+      "materialId": "ply18",
+      "rotationPolicy": "free90"
+    },
+    {
+      "id": "shelf",
+      "label": "Shelf",
+      "width": 780,
+      "height": 300,
+      "qty": 12,
+      "materialId": "ply18",
+      "rotationPolicy": "free90"
+    }
+  ],
+  "stock": [
+    {
+      "id": "sheet",
+      "materialId": "ply18",
+      "width": 2440,
+      "height": 1220,
+      "qty": 2,
+      "grainAxis": "x"
+    }
+  ],
+  "config": { "kerf": 3, "edgeTrim": 5, "seed": 1 },
+  "expectedUnplaced": [{ "partId": "worktop", "qty": 1 }]
+}

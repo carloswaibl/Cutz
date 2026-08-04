@@ -1,0 +1,45 @@
+{
+  "name": "mixed-stock",
+  "description": "HELD OUT - runs in the bench and must clear the waste bar, but no heuristic or constant may be tuned by looking at it. Two full 4x8 sheets plus one 4x4 half sheet of the same material. Hand-checked layout on the full sheets, three 400mm rows of [panel x 6] = 2415, eighteen panels each; on the half sheet (usable 1210 x 1210), three rows of [wide panel x 2] = 1195. 3.4% waste at a perfect pack. Stresses picking the right sheet when the sizes differ.",
+  "role": "held-out",
+  "materials": [{ "id": "ply18", "name": "18mm birch ply", "thickness": 18, "hasGrain": true }],
+  "parts": [
+    {
+      "id": "panel",
+      "label": "Panel",
+      "width": 400,
+      "height": 400,
+      "qty": 36,
+      "materialId": "ply18",
+      "rotationPolicy": "free90"
+    },
+    {
+      "id": "wide-panel",
+      "label": "Wide panel",
+      "width": 596,
+      "height": 400,
+      "qty": 6,
+      "materialId": "ply18",
+      "rotationPolicy": "free90"
+    }
+  ],
+  "stock": [
+    {
+      "id": "full",
+      "materialId": "ply18",
+      "width": 2440,
+      "height": 1220,
+      "qty": 2,
+      "grainAxis": "x"
+    },
+    {
+      "id": "half",
+      "materialId": "ply18",
+      "width": 1220,
+      "height": 1220,
+      "qty": 1,
+      "grainAxis": "x"
+    }
+  ],
+  "config": { "kerf": 3, "edgeTrim": 5, "seed": 1 }
+}

@@ -1,0 +1,84 @@
+{
+  "name": "workbench-cabinet",
+  "description": "A workbench base cabinet: 18mm ply carcass with painted 18mm MDF fronts. Two materials at once, and large parts (900 x 600 sides) beside small ones (596 x 140 toe kicks). Hand-checked layouts on usable 2430 x 1210. Ply sheet 1, two 600mm rows of [side 900 x 2 + divider 600] = 2406; ply sheet 2, four 300mm rows of [shelf 780 x 3] = 2346. MDF sheet, rows 700 + 180 + 180 + 140 = 1209 tall, each holding four 596-wide fronts = 2393. Three sheets, 4.3% waste at a perfect pack.",
+  "role": "benchmark",
+  "materials": [
+    { "id": "ply18", "name": "18mm birch ply", "thickness": 18, "hasGrain": true },
+    { "id": "mdf18", "name": "18mm MDF", "thickness": 18, "hasGrain": false }
+  ],
+  "parts": [
+    {
+      "id": "side",
+      "label": "Carcass side",
+      "width": 900,
+      "height": 600,
+      "qty": 4,
+      "materialId": "ply18",
+      "rotationPolicy": "locked"
+    },
+    {
+      "id": "divider",
+      "label": "Divider",
+      "width": 600,
+      "height": 600,
+      "qty": 2,
+      "materialId": "ply18",
+      "rotationPolicy": "free90"
+    },
+    {
+      "id": "shelf",
+      "label": "Shelf",
+      "width": 780,
+      "height": 300,
+      "qty": 12,
+      "materialId": "ply18",
+      "rotationPolicy": "free90"
+    },
+    {
+      "id": "door",
+      "label": "Door",
+      "width": 596,
+      "height": 700,
+      "qty": 4,
+      "materialId": "mdf18",
+      "rotationPolicy": "free90"
+    },
+    {
+      "id": "drawer-front",
+      "label": "Drawer front",
+      "width": 596,
+      "height": 180,
+      "qty": 8,
+      "materialId": "mdf18",
+      "rotationPolicy": "free90"
+    },
+    {
+      "id": "toe-kick",
+      "label": "Toe kick",
+      "width": 596,
+      "height": 140,
+      "qty": 4,
+      "materialId": "mdf18",
+      "rotationPolicy": "free90"
+    }
+  ],
+  "stock": [
+    {
+      "id": "ply-sheet",
+      "materialId": "ply18",
+      "width": 2440,
+      "height": 1220,
+      "qty": 3,
+      "grainAxis": "x"
+    },
+    {
+      "id": "mdf-sheet",
+      "materialId": "mdf18",
+      "width": 2440,
+      "height": 1220,
+      "qty": 2,
+      "grainAxis": "x"
+    }
+  ],
+  "config": { "kerf": 3, "edgeTrim": 5, "seed": 1 }
+}

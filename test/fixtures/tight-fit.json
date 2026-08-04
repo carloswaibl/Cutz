@@ -1,0 +1,28 @@
+{
+  "name": "tight-fit",
+  "description": "KERF CANARY. The only fixture authored from imperial dimensions, so its values are the doubles units.ts actually produces: 1219.1999999999998 is inchToMm(48) and 2438.3999999999996 is inchToMm(96). Kerf is 1/8\". Eight panels tile the sheet exactly: 2 x 608.0125 + 3.175 = 1219.2 and 4 x 607.21875 + 3 x 3.175 = 2438.4, both a couple of 1e-13 wider than the sheet itself in floating point. A perfect pack wastes 0.7%, which is the four kerf lines and nothing else, and it is only reachable if every comparison goes through the tolerant helpers in geometry.ts and kerf is charged between parts but never at a sheet edge. An off-by-one on kerf shows up immediately as an unplaceable part rather than as a slightly worse number.",
+  "role": "benchmark",
+  "materials": [{ "id": "ply18", "name": "18mm birch ply", "thickness": 18, "hasGrain": true }],
+  "parts": [
+    {
+      "id": "panel",
+      "label": "Panel",
+      "width": 608.0125,
+      "height": 607.21875,
+      "qty": 8,
+      "materialId": "ply18",
+      "rotationPolicy": "locked"
+    }
+  ],
+  "stock": [
+    {
+      "id": "sheet",
+      "materialId": "ply18",
+      "width": 1219.1999999999998,
+      "height": 2438.3999999999996,
+      "qty": 1,
+      "grainAxis": "y"
+    }
+  ],
+  "config": { "kerf": 3.175, "edgeTrim": 0, "seed": 1 }
+}

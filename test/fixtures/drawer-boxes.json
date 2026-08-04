@@ -1,0 +1,57 @@
+{
+  "name": "drawer-boxes",
+  "description": "Twelve drawer boxes for a tool chest: 12mm ply sides and ends, 6mm ply bottoms. Two materials, so the solver must split this into two fully independent packing runs and never mix them on a sheet - a 12mm part on a 6mm sheet would be a real cut, made wrong. Every part is interior and invisible, so all may turn. Hand-checked layouts on usable 2430 x 1210: the 12mm sheets take five 238mm rows each (1202 of 1210), filled from 23,184mm of part length against 24,300mm of row; the 6mm sheet takes three 400mm rows of [bottom x 4] = 2153. Three sheets, 9.8% waste at a perfect pack.",
+  "role": "benchmark",
+  "materials": [
+    { "id": "ply12", "name": "12mm birch ply", "thickness": 12, "hasGrain": true },
+    { "id": "ply6", "name": "6mm birch ply", "thickness": 6, "hasGrain": true }
+  ],
+  "parts": [
+    {
+      "id": "side",
+      "label": "Drawer side",
+      "width": 560,
+      "height": 238,
+      "qty": 24,
+      "materialId": "ply12",
+      "rotationPolicy": "free90"
+    },
+    {
+      "id": "end",
+      "label": "Drawer front/back",
+      "width": 400,
+      "height": 238,
+      "qty": 24,
+      "materialId": "ply12",
+      "rotationPolicy": "free90"
+    },
+    {
+      "id": "bottom",
+      "label": "Drawer bottom",
+      "width": 536,
+      "height": 400,
+      "qty": 12,
+      "materialId": "ply6",
+      "rotationPolicy": "free90"
+    }
+  ],
+  "stock": [
+    {
+      "id": "ply12-sheet",
+      "materialId": "ply12",
+      "width": 2440,
+      "height": 1220,
+      "qty": 3,
+      "grainAxis": "x"
+    },
+    {
+      "id": "ply6-sheet",
+      "materialId": "ply6",
+      "width": 2440,
+      "height": 1220,
+      "qty": 2,
+      "grainAxis": "x"
+    }
+  ],
+  "config": { "kerf": 3, "edgeTrim": 5, "seed": 1 }
+}

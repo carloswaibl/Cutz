@@ -299,24 +299,33 @@ formatLength(mm: number, opts: { unit: Unit; denominator?: number }): string
 ## 4. Benchmark fixtures
 
 `test/fixtures/*.json`, mm dimensions, with a `description` field recording the imperial
-source dimensions for readability. JSON rather than TypeScript modules so M6 can reuse them
-as onboarding example projects. A typed loader in `test/fixtures/index.ts` validates shape at
-load time, so a malformed fixture fails loudly instead of producing a mystery solver bug.
+source dimensions and the hand-checked layout. JSON rather than TypeScript modules so M6 can
+reuse them as onboarding example projects. A typed loader in `test/fixtures/index.ts`
+validates shape at load time, so a malformed fixture fails loudly instead of producing a
+mystery solver bug.
+
+**Sizing rule (established in PR 3).** Waste is a step function in sheet count, so a project
+of one or two sheets is dominated by granularity rather than by packing quality and can fail
+the 15% bar under a *perfect* pack. Every benchmark fixture is therefore authored so its
+material needs ~3+ sheets and its part sizes tile the usable width, with the layout worked
+out by hand and recorded in the fixture's `description`.
 
 | Fixture | What it is | What it stresses |
 |---|---|---|
-| `bookshelf` | 6ft shelf: 2 sides, 5 shelves, back | Baseline realistic project, grain-locked sides |
-| `cabinet-carcass` | Base kitchen cabinet | Mixed part sizes on one material |
-| `drawer-boxes` | 6 drawers: 1/2" sides + 1/4" bottoms | **Two materials** - subproblem independence |
-| `closet-organizer` | Many identical shelves | High `qty`, repetition |
-| `workbench-cabinet` | Ply + MDF, large and small parts | Mixed materials and part scales together |
+| `bookshelf` | Three matching 5ft shelves: 6 sides, 24 shelves | Baseline realistic project, grain-locked sides |
+| `cabinet-carcass` | Eight wall cabinet carcasses | Mixed part sizes on one material |
+| `drawer-boxes` | 12 drawers: 12mm sides + 6mm bottoms | **Two materials** - subproblem independence |
+| `closet-organizer` | Many identical shelves and uprights | High `qty`, repetition |
+| `workbench-cabinet` | Ply carcass + MDF fronts | Mixed materials and part scales together |
 | `grain-locked-panels` | Every part `rotationPolicy: 'locked'` | Rotation constraint under pressure |
 | `mixed-stock` | Two full sheets + one half sheet | Stock instance selection with mixed sizes |
-| `tight-fit` | Parts that exactly tile a sheet minus kerf | **Kerf correctness canary** - near-zero waste is achievable, so an off-by-one kerf error shows up immediately as an unplaceable part |
+| `tight-fit` | Parts that exactly tile a sheet minus kerf | **Kerf correctness canary** - 0.7% waste is achievable and that is the kerf alone, so an off-by-one kerf error shows up immediately as an unplaceable part |
 | `oversized-part` | One part larger than any stock | Graceful `unplacedParts`, no crash |
 | `insufficient-stock` | More parts than stock can hold | Exact shortfall accounting |
 
-The last two are correctness fixtures, excluded from the waste benchmark.
+Each fixture declares its own purpose as `role: 'benchmark' | 'held-out' | 'correctness'`, so
+the bench harness reads it from the file rather than hardcoding a list. The last two are
+correctness fixtures, excluded from the waste benchmark.
 
 **Overfitting guard:** tune the solver against 6 fixtures. `mixed-stock` and
 `grain-locked-panels` are **held out** - they run in the bench and must clear 15%, but no
@@ -404,9 +413,64 @@ Landed with 89 new tests (173 total). Decisions made during the work:
   performing actual guillotine cuts (so the answer is known by construction), plus
   permutation-invariance on the pinwheel, since candidate cuts are enumerated in part order.
 
-**PR 3 - `feat/solver-fixtures`**
+**PR 3 - `feat/solver-fixtures` - DONE**
 Fixture JSON files, typed loader, shape validation, plus `rng.ts` and its determinism tests.
-No solver yet. Small and mechanical; lands early so later PRs can bench against it.
+No solver yet. Lands early so later PRs can bench against it.
+
+Landed with 55 new tests (228 total). Decisions made during the work:
+
+- **Fixtures had to be sized deliberately to make the 15% bar reachable, and §4's list as
+  written could not have cleared it.** A single 6ft bookshelf is ~3.7M mm² of parts on a
+  2.98M mm² sheet - 1.25 sheets, so two get opened and waste is 37% under a *perfect* pack.
+  Sheet granularity, not packing quality, dominates any project of one or two sheets. Every
+  benchmark fixture is therefore authored to a rule: **enough parts that the material needs
+  ~3+ sheets, with part sizes that tile the usable width**, verified by a hand-checked row
+  layout recorded in the fixture's own `description`. `bookshelf` became three matching
+  units for this reason, `cabinet-carcass` eight carcasses.
+- Fixture dimensions are **round millimetres**, with `tight-fit` alone authored from
+  imperial so its literals are the doubles `units.ts` actually produces
+  (`1219.1999999999998` is `inchToMm(48)`). A test pins them to `inchToMm` so nobody tidies
+  them to `1219.2` and silently retires the EPSILON path.
+- `tight-fit`'s achievable waste is **0.7%, not zero** - that is the four kerf lines, which
+  are real material. Worth stating because PR 5 freezes it into `baseline.json`.
+- Fixtures carry `materials` and a **`role` discriminant** (`benchmark` | `held-out` |
+  `correctness`), so one file is the single source of truth and PR 5's bench reads held-out
+  status rather than hardcoding a list. `expectedUnplaced` exists only on `correctness`.
+- **The loader throws**, unlike `validate.ts`. Deliberate: that module guards data a user
+  typed and owes them an actionable message, this one guards data we wrote and a stack
+  trace naming the file and field is the most useful thing it can produce.
+- JSON is read with `node:fs` and parsed as `unknown` rather than imported through
+  `resolveJsonModule`, so the validation is real instead of TypeScript inferring a shape
+  nobody checked.
+- The loader rejects a **grain-locked part on a grainless material**. Locking a part on MDF
+  or melamine is a fixture-authoring slip that would make the packing problem harder for a
+  reason that does not exist in the workshop.
+- The fixtures gave PR 2's `validateInputs` its first run against realistic data. All eight
+  benchmark and held-out fixtures report **zero issues**; `oversized-part` reports exactly
+  one `part-too-large` warning; `insufficient-stock` reports nothing, because a capacity
+  shortfall is the solver's answer to give, not the validator's.
+- `rng.ts` exposes `createRng(seed) -> { next, int, shuffle }`. The **output stream is
+  frozen by golden vectors** - it is part of the product's contract, since a saved project
+  must lay out identically when reopened, so changing it has to show up as a diff in review.
+  The seed is reduced to 32 bits, documented. `shuffle` copies rather than mutating, and
+  reads its slots through a bounds-checked helper: narrowing `noUncheckedIndexedAccess`
+  away with an `=== undefined` guard would silently skip swaps when `T` includes `undefined`.
+
+**Fixture waste under a throwaway row packer**, as a floor on what PR 4 must achieve. Every
+benchmark and held-out fixture clears 15% with a naive shelf heuristic, so the free-rect
+packer has real margin. Both correctness fixtures reproduced their declared shortfalls
+exactly, which is independent confirmation of those numbers:
+
+| Fixture | Sheets | Waste |
+|---|---|---|
+| `bookshelf` | 3 | 4.9% |
+| `cabinet-carcass` | 5 | 10.2% |
+| `closet-organizer` | 3 | 2.8% |
+| `drawer-boxes` | 3 | 9.8% |
+| `grain-locked-panels` | 3 | 3.5% |
+| `mixed-stock` | 3 | 3.4% |
+| `tight-fit` | 1 | 0.7% |
+| `workbench-cabinet` | 3 | 4.3% |
 
 **PR 4 - `feat/guillotine-greedy`**
 `instances.ts`, `freeRects.ts`, `pack.ts`, `guillotine/index.ts`. Single fixed heuristic and
@@ -460,3 +524,7 @@ Whatever tuning is needed to clear 15% on all eight benchmark fixtures, a short
    many sheets as I need" is expressed as a large `qty`. Fine for M1; M2's UI should decide
    whether to surface an explicit "unlimited" affordance.
 5. **M0 was skipped** (§2). Importer risk for M4/M5 remains unretired.
+6. **Fixture waste figures are a floor, not a promise.** The PR 3 table was produced by a
+   throwaway row packer, not by the real solver. If PR 4's free-rect packer does *worse*
+   than a naive shelf heuristic on a fixture, the packer is wrong, not the fixture. A
+   fixture only gets redesigned if it turns out to be unreachable for a structural reason.
