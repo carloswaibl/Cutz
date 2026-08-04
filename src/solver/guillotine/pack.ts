@@ -41,6 +41,8 @@ export interface SheetLayout {
   placedArea: number;
   /** Full `width * height` of the sheet, mm². Not the usable area - see below. */
   sheetArea: number;
+  /** Area of the single largest free rectangle remaining on this sheet, mm². */
+  maxFreeRectArea: number;
 }
 
 export interface PackResult {
@@ -143,10 +145,17 @@ export function greedyPack(
     // never have held a part. Sheets that stayed shut are excluded entirely by
     // never being pushed here; owning ten sheets and using two is not 80% waste.
     const sheetArea = sheet.stock.width * sheet.stock.height;
+    let maxFreeRectArea = 0;
+    for (const rect of free.list()) {
+      const rArea = area(rect);
+      if (rArea > maxFreeRectArea) maxFreeRectArea = rArea;
+    }
+
     sheets.push({
       layout: { stockInstanceId: sheet.id, placements, wastePct: 1 - placedArea / sheetArea },
       placedArea,
       sheetArea,
+      maxFreeRectArea,
     });
   }
 

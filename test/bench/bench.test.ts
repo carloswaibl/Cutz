@@ -2,7 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 import { checkResult } from '../../src/domain/validate';
-import { GuillotineSolver } from '../../src/solver/guillotine';
+import { solve } from '../../src/solver';
 import { benchmarkFixtures, type Fixture } from '../fixtures/index';
 
 interface BaselineEntry {
@@ -46,7 +46,7 @@ describe('solver benchmark harness', () => {
     (_name, fixture: Fixture) => {
       it('solves within baseline constraints and satisfies invariants', () => {
         const start = performance.now();
-        const result = GuillotineSolver.solve(fixture.parts, fixture.stock, fixture.config);
+        const result = solve(fixture.parts, fixture.stock, fixture.config);
         const elapsed = performance.now() - start;
 
         // Invariant check

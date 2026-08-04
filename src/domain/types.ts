@@ -51,6 +51,8 @@ export interface Stock {
   grainAxis: 'x' | 'y';
 }
 
+export type SolverEffort = 'fast' | 'balanced' | 'thorough';
+
 export interface SolverConfig {
   /** Width of material removed by the blade, in mm. Typically 3mm / 1/8". */
   kerf: number;
@@ -61,6 +63,11 @@ export interface SolverConfig {
   edgeTrim: number;
   /** Seed for the solver's PRNG. Same inputs + same seed must give same output. */
   seed: number;
+  /**
+   * How much computational effort to spend on randomized restarts and hill-climbing.
+   * Defaults to 'balanced'.
+   */
+  effort?: SolverEffort;
 }
 
 export interface Placement {
