@@ -3,10 +3,12 @@ import { parseStockInstanceId } from '../domain/instances';
 import type { Layout, Material, Stock } from '../domain/types';
 import { ConfigBar } from './components/ConfigBar';
 import { Header } from './components/Header';
+import { LayoutViewer } from './components/LayoutViewer';
 import { MaterialManager } from './components/MaterialManager';
 import { PartTable } from './components/PartTable';
-import { SheetSvg } from './components/SheetSvg';
 import { StockTable } from './components/StockTable';
+import { SummaryCard } from './components/SummaryCard';
+import { UnplacedAlert } from './components/UnplacedAlert';
 import { useCutListState } from './state/useCutListState';
 
 /** Resolve a layout's stockInstanceId to the Stock and Material it belongs to. */
@@ -108,36 +110,34 @@ export function App() {
             {/* Solver Status & Cut Diagrams */}
             {state.result && (
               <>
-                <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 flex items-center justify-between text-xs font-mono text-slate-400">
-                  <div className="flex items-center gap-2">
-                    <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                    <span>Layout solver active</span>
-                  </div>
-                  <div>
-                    <span>
-                      {state.result.layouts.length} sheet(s) used | Waste:{' '}
-                      <span className="text-emerald-400 font-bold">
-                        {(state.result.totalWastePct * 100).toFixed(1)}%
-                      </span>
-                    </span>
-                  </div>
-                </div>
+                <SummaryCard
+                  result={state.result}
+                  parts={state.parts}
+                  materials={state.materials}
+                  stock={state.stock}
+                />
 
-                {/* SVG Cut Diagrams */}
-                {resolvedLayouts.map(({ layout, stock, material }) => (
-                  <SheetSvg
-                    key={layout.stockInstanceId}
-                    layout={layout}
-                    stock={stock}
-                    parts={state.parts}
-                    material={material}
-                    config={state.config}
-                    displayUnit={state.displayUnit}
-                    fractionDenominator={fracDenom}
-                    hoveredPartId={state.hoveredPartId}
-                    onHoverPart={state.setHoveredPartId}
-                  />
-                ))}
+                <UnplacedAlert
+                  unplacedParts={state.result.unplacedParts}
+                  parts={state.parts}
+                  stock={state.stock}
+                  config={state.config}
+                  displayUnit={state.displayUnit}
+                  fractionDenominator={fracDenom}
+                />
+
+                <LayoutViewer
+                  layouts={resolvedLayouts}
+                  parts={state.parts}
+                  config={state.config}
+                  displayUnit={state.displayUnit}
+                  fractionDenominator={fracDenom}
+                  hoveredPartId={state.hoveredPartId}
+                  onHoverPart={state.setHoveredPartId}
+                  activeSheetIndex={state.activeSheetIndex}
+                  onActiveSheetChange={state.setActiveSheetIndex}
+                  selectedMaterialId={state.selectedMaterialId}
+                />
               </>
             )}
           </div>
