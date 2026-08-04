@@ -40,11 +40,23 @@ npm run preview      # serve the production build locally
 npm test             # vitest, watch mode
 npm run test:run     # vitest, single run
 npm run bench        # solver benchmark suite against fixtures
-npm run typecheck    # tsc --noEmit
-npm run lint         # eslint
+npm run typecheck    # tsc -b --noEmit
+npm run lint         # biome check (lint + format check)
+npm run lint:fix     # biome check --write
 ```
 
 Run `npm run typecheck && npm run test:run` before considering any change complete.
+
+## Git workflow
+
+`main` is the deploy branch and is never committed to directly. Work happens on a
+branch, lands via PR, and CI must be green to merge.
+
+- Branch names: `feat/`, `fix/`, `chore/`, `docs/` + short kebab-case description.
+- CI (`.github/workflows/ci.yml`) runs lint, typecheck, tests, and build on every PR.
+- Merging to `main` runs the same checks and then deploys `dist/` to GitHub Pages.
+  The deployed site is always the exact build CI verified.
+- Squash-merge PRs. The PR title becomes the commit message on `main`.
 
 ---
 
