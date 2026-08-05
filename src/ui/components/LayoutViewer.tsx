@@ -1,7 +1,23 @@
+import { useEffect, useState } from 'react';
 import { TransformComponent, TransformWrapper } from 'react-zoom-pan-pinch';
 import type { Layout, Material, Part, SolverConfig, Stock } from '../../domain/types';
+import { downloadFile, downloadFiles, type ExportFile, SVG_MIME_TYPE } from '../../export/download';
 import type { DisplayUnit } from '../state/types';
 import { SheetSvg } from './SheetSvg';
+
+/**
+ * The SVG exporter is loaded on demand.
+ *
+ * It pulls in `react-dom/server`, which is ~60 kB gzipped - most of the app
+ * again, paid by every visitor including the ones who never export. So it is a
+ * separate chunk, warmed on mount rather than on click: a shop with bad wifi
+ * must not find out the chunk is missing at the moment the user asks for a file,
+ * and prefetching over the connection that just delivered the app closes all but
+ * a few seconds of that window.
+ */
+function loadSvgExporter() {
+  return import('../../export/svg');
+}
 
 interface ResolvedLayout {
   layout: Layout;
@@ -34,6 +50,12 @@ export function LayoutViewer({
   onActiveSheetChange,
   selectedMaterialId,
 }: LayoutViewerProps) {
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void loadSvgExporter();
+  }, []);
+
   // Filter layouts based on the global material filter
   const filteredLayouts = layouts.filter(
     (l) => selectedMaterialId === 'all' || l.material.id === selectedMaterialId,
@@ -69,6 +91,45 @@ export function LayoutViewer({
     activeSheetIndex >= 0 && activeSheetIndex < filteredLayouts.length ? activeSheetIndex : 0;
   const activeLayout = filteredLayouts[safeIndex];
   if (!activeLayout) return null;
+
+  /**
+   * Build the standalone SVG file for one sheet.
+   *
+   * The sheet number is its position in the filtered list, so the file name
+   * matches the tab the user clicked rather than an internal instance index.
+   */
+  async function exportFileFor(entry: ResolvedLayout, index: number): Promise<ExportFile> {
+    const { renderSheetSvg, sheetFileName } = await loadSvgExporter();
+    return {
+      filename: sheetFileName({
+        sheetNumber: index + 1,
+        material: entry.material,
+        extension: 'svg',
+      }),
+      contents: renderSheetSvg({
+        layout: entry.layout,
+        stock: entry.stock,
+        parts,
+        material: entry.material,
+        config,
+        displayUnit,
+        fractionDenominator,
+        sheetNumber: index + 1,
+        sheetCount: filteredLayouts.length,
+      }),
+      mimeType: SVG_MIME_TYPE,
+    };
+  }
+
+  /** Run an export, surfacing failures instead of doing nothing visible. */
+  async function runExport(work: () => Promise<void>): Promise<void> {
+    setExportError(null);
+    try {
+      await work();
+    } catch (err: unknown) {
+      setExportError(err instanceof Error ? err.message : String(err));
+    }
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -179,6 +240,36 @@ export function LayoutViewer({
                     </svg>
                   </button>
                 </div>
+
+                {/* Export cluster */}
+                <div className="flex flex-col bg-slate-950/80 backdrop-blur-sm border border-slate-700 rounded-lg shadow-lg overflow-hidden text-xs">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void runExport(async () => {
+                        downloadFile(await exportFileFor(activeLayout, safeIndex));
+                      });
+                    }}
+                    className="flex items-center gap-2 px-3 py-2 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors border-b border-slate-700"
+                    title="Download this sheet as a standalone SVG file"
+                  >
+                    <DownloadIcon />
+                    SVG (this sheet)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void runExport(async () => {
+                        await downloadFiles(await Promise.all(filteredLayouts.map(exportFileFor)));
+                      });
+                    }}
+                    className="flex items-center gap-2 px-3 py-2 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+                    title="One file per sheet. Your browser will ask permission to download multiple files."
+                  >
+                    <DownloadIcon />
+                    SVG (all {filteredLayouts.length} sheets)
+                  </button>
+                </div>
               </div>
 
               {/* Pan/Zoom Canvas */}
@@ -219,9 +310,36 @@ export function LayoutViewer({
           )}
         </TransformWrapper>
       </div>
+      {exportError && (
+        <div className="text-center text-xs text-red-400" role="alert">
+          Export failed: {exportError}
+        </div>
+      )}
       <div className="text-center text-xs text-slate-500">
-        Scroll to zoom. Click and drag to pan.
+        Scroll to zoom. Click and drag to pan. Exporting all sheets downloads one file each, so your
+        browser will ask permission the first time.
       </div>
     </div>
+  );
+}
+
+function DownloadIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      xmlns="http://www.w3.org/2000/svg"
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" x2="12" y1="15" y2="3" />
+    </svg>
   );
 }

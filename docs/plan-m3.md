@@ -253,7 +253,7 @@ plan only rebuilds when the result does. PR 4 memoises `buildCutPlans` alongside
 
 ---
 
-### PR 2 - `feat/export-svg`
+### PR 2 - `feat/export-svg` - DONE
 
 **Focus:** theme extraction and SVG export.
 
@@ -263,6 +263,62 @@ plan only rebuilds when the result does. PR 4 memoises `buildCutPlans` alongside
 - `src/export/download.ts`.
 - Export controls in `LayoutViewer`: "SVG (this sheet)" and "SVG (all sheets)".
 - Tests: snapshot golden SVG for the bookshelf fixture; assert dimensional accuracy by parsing back the sheet rect; assert no `class=` attributes leak into export output (Tailwind classes are meaningless in a standalone file).
+
+Landed with 17 new tests (416 total). Decisions made during the work, binding on PRs 3-5:
+
+- **The `<svg>` element moved to `src/ui/components/SheetFigure.tsx`.** §4.1 assumed the export
+  could render `SheetSvg` directly, but the sheet identity badge is an HTML `div` *outside* the
+  SVG, so rendering that component yields a fragment no `.svg` file can hold. `SheetSvg` is now
+  the screen wrapper - div, badge, `SCREEN_THEME`, hover wiring - and `SheetFigure` is the
+  drawing. PR 4's print components render `SheetFigure`, never `SheetSvg`.
+- **The screen rendering is a golden file too**, `test/export/golden/screen-sheet-1.svg`. The
+  theme extraction was verified byte-identical against a capture taken from `main` before the
+  refactor; the golden keeps it that way through PRs 3-5. If a change to `SheetFigure` moves
+  it, that is a real screen change and needs to be an intended one.
+- **The exported drawing states its physical size in millimetres**, regardless of display unit.
+  Physical size is identical either way - only the number in the attribute differs - and the
+  `mm` suffix makes the scale unambiguous. This is *not* the precedent for DXF: `$INSUNITS` is
+  a document-level declaration a CAD user acts on, so PR 3 still follows the display unit as
+  §4.2 says.
+- **`figureViewBox(stock, showTitle)` is exported** and the exporter reads the physical size
+  from it rather than recomputing. A drawing that claims a size it does not have is the one
+  error a CAD user cannot see, because it looks entirely correct at the wrong scale. PR 3
+  should take its `$EXTMIN`/`$EXTMAX` from the same helper.
+- **The title block is inside the SVG, the waste badge is not.** `showTitle` draws material,
+  sheet n of m, waste, kerf and trim above the sheet. The screen keeps its HTML badge, which
+  stays crisp while the diagram zooms. PR 4's print pages set `showTitle`.
+- **Overlays are wired but off.** `cutPlan`, `showCutLines`, and `showPartNumbers` render blade
+  lines with numbered badges and piece letters on parts, and nothing turns them on yet. PR 4
+  enables them for screen, print, and export in one change, so the diagram a user is looking at
+  never differs from the file they export.
+- **View padding is derived from the dimension labels**, not the fixed 8mm it had been. The
+  rotated height label sits 3mm outside the sheet and its glyphs run back towards it, so 8mm
+  clipped it on any full sheet of ply - visible on screen before this milestone and unmissable
+  in an exported file. This is the one intended change to the screen diagram in this PR.
+- **XML comment content is sanitised.** A material named `ply -- factory seconds` would
+  otherwise close the metadata comment early and produce a file no parser will open.
+- **Downloads are spaced 300ms apart** in `downloadFiles`, and the viewer caption states the
+  browser will ask permission the first time. Chrome silently drops downloads that arrive
+  faster. Confirmed in Chrome: the first "all sheets" export delivers sheet 1 and holds the
+  rest until the user grants the multiple-downloads permission.
+- **The exporter is a lazily-loaded chunk, prefetched on mount.** §4.1's "no new runtime
+  dependencies" is true of `package.json` and false of the bundle: `react-dom/server` costs
+  **196 kB raw / 60 kB gzip**, taking the app from 91 kB to 151 kB gzip for a feature most
+  visitors never use. `LayoutViewer` now reaches it through `import('../../export/svg')` and
+  warms it in a `useEffect` on mount, which puts initial load back at 92.5 kB gzip with a
+  58.5 kB `svg-*.js` chunk alongside. Prefetching rather than loading on click is the offline
+  constraint doing its work - a shop with bad wifi must not discover the chunk is missing at
+  the moment it clicks export. PR 3's DXF writer is hand-rolled and headless, so it has no
+  reason to join that chunk; if it ever imports a renderer, it must be lazily loaded the same
+  way. **A service worker would close the remaining gap and is M6's business, not this PR's.**
+- **Export failures surface.** A dynamic import that fails has no visible effect otherwise, so
+  `LayoutViewer` catches and renders the message under the diagram.
+
+**Known cosmetic gaps, not fixed here:** the `trim` callout still overlaps the sheet's top edge
+(there is no room for it inside a 5mm trim band, and the title block now states the trim
+anyway), and coordinates carry float residue from inch conversion - `1235.1999999999998` in the
+viewBox against a clean `1235.2mm` physical size. Both are cosmetic; the physical size and the
+geometry are exact.
 
 ---
 
