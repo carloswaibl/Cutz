@@ -18,11 +18,10 @@
  * Pure and headless. Every dimension is millimetres.
  */
 
+import { buildCutTree, type CheckStatus, DEFAULT_MAX_GUILLOTINE_STEPS } from './cutplan';
 import {
   approxGte,
-  approxLte,
   area,
-  bottom,
   clearance,
   containsRect,
   EPSILON,
@@ -30,12 +29,16 @@ import {
   isEmpty,
   placementRect,
   type Rect,
-  right,
   usableArea,
 } from './geometry';
 import { parseStockInstanceId } from './instances';
 import type { Part, Placement, Result, SolverConfig, Stock } from './types';
 import { formatLength } from './units';
+
+// The search itself lives in `cutplan.ts`, which needs the tree this checker
+// only needs a verdict from. Re-exported here so both halves of "does this data
+// make sense" keep reading as one vocabulary.
+export { type CheckStatus, DEFAULT_MAX_GUILLOTINE_STEPS } from './cutplan';
 
 /**
  * Render a millimetre value for a message.
@@ -298,25 +301,6 @@ export function validateInputs(
 // --- Guillotine decomposability ------------------------------------------
 
 /**
- * `unverified` means the search gave up before proving anything either way.
- *
- * It is deliberately distinct from `valid`. A checker that silently downgrades
- * "I ran out of budget" to "looks fine" is worse than no checker at all, since
- * it converts an unknown into a false assurance.
- */
-export type CheckStatus = 'valid' | 'invalid' | 'unverified';
-
-/**
- * Step cap for the decomposability search.
- *
- * The search is exponential in the worst case. Memoisation on the region
- * collapses it for realistic layouts - the regions a sequence of full-width
- * cuts can produce are heavily shared - but an adversarial arrangement can
- * still blow up, and hanging is not an acceptable failure mode for a checker.
- */
-export const DEFAULT_MAX_GUILLOTINE_STEPS = 200_000;
-
-/**
  * Can `rects` be produced from `region` by a sequence of guillotine cuts?
  *
  * A guillotine cut runs edge to edge across the whole workpiece, because that
@@ -325,17 +309,15 @@ export const DEFAULT_MAX_GUILLOTINE_STEPS = 200_000;
  * example being the pinwheel, four parts rotated around a centre, which has no
  * overlaps at all and no valid cut anywhere.
  *
- * `region` should be the sheet's *usable* area: the edge trim cuts are
- * themselves guillotine cuts and are always valid, so they are not searched.
- * Rectangles are assumed to lie inside `region` and to clear each other by at
- * least `kerf`; both are checked separately by `checkResult`, and this function
- * answers only the cuttability question.
+ * The search lives in `cutplan.ts`, which needs the cut sequence it walks. This
+ * checker needs only the verdict, and delegating is what stops the two from
+ * ever disagreeing: a private second copy of the search here would eventually
+ * bless a layout the printed cut plan cannot produce.
  *
- * Candidate cuts are taken at the far edge of each rectangle only. That is
- * complete rather than a heuristic: any valid cut can be slid back towards the
- * near edge until it rests on the far edge of some rectangle on its near side,
- * and sliding it that way cannot invalidate it. The search backtracks fully
- * over those candidates, because taking the first valid cut is not sound.
+ * `region` should be the sheet's *usable* area, and rectangles are assumed to
+ * lie inside it and to clear each other by at least `kerf` - `checkResult`
+ * covers both separately. See `buildCutTree` for why the candidate cuts it
+ * enumerates are complete rather than a heuristic.
  */
 export function checkGuillotine(
   region: Rect,
@@ -343,95 +325,7 @@ export function checkGuillotine(
   kerf: number,
   maxSteps: number = DEFAULT_MAX_GUILLOTINE_STEPS,
 ): CheckStatus {
-  const memo = new Map<string, CheckStatus>();
-  let steps = 0;
-
-  // The set of rectangles inside a region is fully determined by the region, so
-  // the region alone is a sound cache key. Float noise can spell the same
-  // region two ways, which costs a cache miss and nothing else.
-  const key = (r: Rect): string =>
-    `${r.x.toFixed(6)},${r.y.toFixed(6)},${r.width.toFixed(6)},${r.height.toFixed(6)}`;
-
-  function cutAlong(region: Rect, items: readonly Rect[], axis: 'x' | 'y'): CheckStatus {
-    const near = (r: Rect): number => (axis === 'x' ? r.x : r.y);
-    const far = (r: Rect): number => (axis === 'x' ? right(r) : bottom(r));
-    const regionNear = near(region);
-    const regionFar = far(region);
-
-    let sawUnverified = false;
-    for (const cut of new Set(items.map(far))) {
-      // The cut must fall strictly inside the region, and the blade itself has
-      // to land on material that is there.
-      if (cut <= regionNear + EPSILON) continue;
-      if (!approxLte(cut + kerf, regionFar)) continue;
-
-      const before: Rect[] = [];
-      const after: Rect[] = [];
-      let straddled = false;
-      for (const item of items) {
-        if (approxLte(far(item), cut)) before.push(item);
-        else if (approxGte(near(item), cut + kerf)) after.push(item);
-        else {
-          // The blade would pass through this part. Not a cut we can make.
-          straddled = true;
-          break;
-        }
-      }
-      // A cut with everything on one side makes no progress.
-      if (straddled || before.length === 0 || after.length === 0) continue;
-
-      const beforeRegion: Rect =
-        axis === 'x'
-          ? { x: region.x, y: region.y, width: cut - region.x, height: region.height }
-          : { x: region.x, y: region.y, width: region.width, height: cut - region.y };
-      const afterRegion: Rect =
-        axis === 'x'
-          ? { x: cut + kerf, y: region.y, width: regionFar - cut - kerf, height: region.height }
-          : { x: region.x, y: cut + kerf, width: region.width, height: regionFar - cut - kerf };
-
-      const beforeStatus = decompose(beforeRegion, before);
-      if (beforeStatus === 'invalid') continue;
-      const afterStatus = decompose(afterRegion, after);
-      if (afterStatus === 'invalid') continue;
-      if (beforeStatus === 'valid' && afterStatus === 'valid') return 'valid';
-      sawUnverified = true;
-    }
-
-    return sawUnverified ? 'unverified' : 'invalid';
-  }
-
-  function decompose(region: Rect, items: readonly Rect[]): CheckStatus {
-    // One rectangle in a region it fits inside needs no further cuts: the
-    // region's own boundary is the last set of cuts, and those are guillotine
-    // cuts by construction.
-    if (items.length <= 1) return 'valid';
-
-    const cacheKey = key(region);
-    const cached = memo.get(cacheKey);
-    if (cached !== undefined) return cached;
-
-    // Not memoised: this is a budget outcome, not a property of the region.
-    if (steps >= maxSteps) return 'unverified';
-    steps += 1;
-
-    const acrossX = cutAlong(region, items, 'x');
-    if (acrossX === 'valid') {
-      memo.set(cacheKey, 'valid');
-      return 'valid';
-    }
-    const acrossY = cutAlong(region, items, 'y');
-    if (acrossY === 'valid') {
-      memo.set(cacheKey, 'valid');
-      return 'valid';
-    }
-
-    const status: CheckStatus =
-      acrossX === 'unverified' || acrossY === 'unverified' ? 'unverified' : 'invalid';
-    memo.set(cacheKey, status);
-    return status;
-  }
-
-  return decompose(region, rects);
+  return buildCutTree(region, rects, kerf, { maxSteps }).status;
 }
 
 // --- Result invariant checking -------------------------------------------
