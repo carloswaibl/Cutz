@@ -89,13 +89,16 @@ export interface CutStep {
   /**
    * Distance from the piece's near edge to the blade's near face, mm.
    * This is the fence setting, and the near-side keeper comes off at exactly
-   * this dimension.
+   * this dimension. Negative when the blade overhangs the piece's near edge.
    */
   fence: number;
   /** Piece consumed by this cut. */
   pieceId: string;
-  /** Pieces produced: [near, far]. A 'finish' cut's far piece is waste. */
-  produces: [string, string];
+  /**
+   * Pieces produced: [near, far]. A 'finish' cut's far piece is waste.
+   * A side is null when the blade left no offcut at all. Never both.
+   */
+  produces: [string | null, string | null];
   /** Nesting depth, for indenting the printed step list. */
   depth: number;
 }
@@ -104,8 +107,12 @@ export interface CutPlan {
   stockInstanceId: string;
   steps: CutStep[];
   pieces: CutPiece[];
-  /** 'unverified' when the search hit its budget; never silently downgraded to complete. */
-  status: 'complete' | 'unverified';
+  /**
+   * 'unverified' - the search hit its budget and proved nothing.
+   * 'invalid' - the search proved no cut order exists.
+   * Neither is ever silently downgraded to complete, and neither carries steps.
+   */
+  status: 'complete' | 'unverified' | 'invalid';
 }
 ```
 
@@ -174,7 +181,7 @@ Five sequential PRs. Each is independently mergeable and CI-green.
 
 ---
 
-### PR 1 - `feat/domain-cut-plan`
+### PR 1 - `feat/domain-cut-plan` - DONE
 
 **Focus:** the cut tree. Pure domain, zero UI.
 
@@ -188,6 +195,61 @@ Five sequential PRs. Each is independently mergeable and CI-green.
   - Grain labelling for both `grainAxis` values and for a grainless material.
   - Determinism: same input, identical plan across runs.
 - Measure plan-build time across all fixtures and record it. If it is material relative to solve time, the UI computes plans lazily (PR 4 decision point).
+
+Landed with 34 new tests (399 total). Decisions made during the work, binding on PRs 2-5:
+
+- **`CutPlan.status` has three values, not two:** `'complete' | 'unverified' | 'invalid'`.
+  §3.2 gave only the first two, but a layout that is *provably* uncuttable and a search that
+  *ran out of budget* are different facts, and `validate.ts` argues at length that conflating
+  them is the one thing a checker must never do. PR 4 owes them different messages: "this
+  layout cannot be cut on a table saw" versus "cut sequence unavailable for this sheet".
+  Neither carries a partial step list - half a cut plan is worse than none, because the
+  operator discovers where it stops by running out of sheet.
+- **`CutStep.produces` is `[string | null, string | null]`**, not `[string, string]`. When the
+  waste a trim or finishing cut removes is thinner than the kerf, the blade runs off the edge
+  of the piece and no offcut survives it. The cut is still real and still has to be made -
+  this happens on the bookshelf fixture, where a 301mm strip yields a 300mm part - but there
+  is no piece to name. Never `null` on both sides.
+- **`fence` can be negative**, on a near-side finishing cut whose waste is thinner than the
+  kerf. There is no fence setting for a blade that overhangs the piece; PR 4 renders those as
+  "trim flush" rather than printing a plausible-looking number.
+- **Rip preference applies at every level of the search**, not only the root, which is what
+  §3.3's "rips preferred at the top" gets you in practice. The bookshelf sheet comes out as
+  four 300mm rips followed by crosscuts at 1600 and 780 - the order a person would actually
+  work in.
+- **`CheckStatus` and `DEFAULT_MAX_GUILLOTINE_STEPS` moved to `cutplan.ts`** and are
+  re-exported from `validate.ts`, so the dependency runs one way and existing import paths
+  still resolve. `checkGuillotine` is now four lines.
+- **Candidate cuts are sorted** rather than taken in placement order. Reordering the parts of
+  a layout must not reorder the cut list the user is holding.
+- **`reduceTo` snaps its keeper to the target rect** rather than carrying the arithmetic's
+  residue. A keeper 1e-13mm off the part it is meant to be is a float artefact, and letting
+  it accumulate would drift the plan away from the placements it was derived from. The replay
+  test compares to 1e-6, so the snap can only ever be absorbing noise.
+- **Signatures take options objects**, `buildCutPlan({ stock, material, layout, parts, config })`,
+  plus `buildCutPlans(result, { parts, stock, materials, config })` returning one plan per
+  layout for the UI.
+- **Both throw on a broken result** - a layout naming a part or a stock entry the project does
+  not contain. That is an internal inconsistency rather than user data, and `checkResult`
+  reports it properly long before a plan is built.
+
+**Timing: build plans eagerly.** Across all ten fixtures, building every sheet's plan costs
+0.09-2.21ms against 2.4-22.8ms to solve - under 10% of solve time in every case, and the
+plan only rebuilds when the result does. PR 4 memoises `buildCutPlans` alongside `result` in
+`useCutListState` with no lazy path and no loading state.
+
+| Fixture | Sheets | Solve (ms) | Plan (ms) | Steps |
+|---|---|---|---|---|
+| `bookshelf` | 3 | 22.81 | 2.21 | 61 |
+| `cabinet-carcass` | 5 | 17.83 | 0.87 | 98 |
+| `closet-organizer` | 3 | 6.31 | 0.36 | 50 |
+| `drawer-boxes` | 3 | 12.42 | 0.70 | 96 |
+| `grain-locked-panels` | 3 | 3.90 | 0.24 | 48 |
+| `insufficient-stock` | 1 | 4.04 | 0.09 | 13 |
+| `mixed-stock` | 3 | 10.40 | 0.46 | 75 |
+| `oversized-part` | 1 | 3.81 | 0.18 | 22 |
+| `tight-fit` | 1 | 2.39 | 0.10 | 7 |
+| `workbench-cabinet` | 3 | 9.79 | 0.31 | 63 |
 
 ---
 
