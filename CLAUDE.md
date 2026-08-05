@@ -22,6 +22,7 @@ These were decided deliberately. **Do not violate them without explicit approval
 ## Stack
 
 - **TypeScript** (strict mode) + **React** + **Vite**
+- **Tailwind CSS v4** — styling and responsive layout grid
 - **three.js** — STL parsing and plane math only, not for rendering
 - **svg-pathdata** — SVG path parsing and curve flattening
 - **idb** — IndexedDB wrapper
@@ -254,4 +255,6 @@ Things that have been decided against, or are easy to get wrong:
 
 ## Current status
 
-See `docs/project-plan.md` for milestones. Ask which milestone is active before starting substantial work.
+Milestone 2 (Minimal Usable App) is complete. The application now supports part/stock entry, unit conversions, live solver updates, and SVG cut diagram rendering.
+
+The next active milestone is **M3 (Export)**. See `docs/project-plan.md` for details. Ask before starting substantial work.
