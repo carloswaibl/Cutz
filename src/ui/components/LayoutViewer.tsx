@@ -1,7 +1,15 @@
 import { useEffect, useState } from 'react';
 import { TransformComponent, TransformWrapper } from 'react-zoom-pan-pinch';
 import type { Layout, Material, Part, SolverConfig, Stock } from '../../domain/types';
-import { downloadFile, downloadFiles, type ExportFile, SVG_MIME_TYPE } from '../../export/download';
+import {
+  DXF_MIME_TYPE,
+  downloadFile,
+  downloadFiles,
+  type ExportFile,
+  SVG_MIME_TYPE,
+} from '../../export/download';
+import { renderSheetDxf } from '../../export/dxf';
+import { sheetFileName } from '../../export/filename';
 import type { DisplayUnit } from '../state/types';
 import { SheetSvg } from './SheetSvg';
 
@@ -14,10 +22,29 @@ import { SheetSvg } from './SheetSvg';
  * must not find out the chunk is missing at the moment the user asks for a file,
  * and prefetching over the connection that just delivered the app closes all but
  * a few seconds of that window.
+ *
+ * The DXF writer, by contrast, is imported statically: it is a headless string
+ * builder with no renderer behind it, so it costs a few kB and splitting it
+ * would buy nothing but a second way for an export to fail offline.
  */
 function loadSvgExporter() {
   return import('../../export/svg');
 }
+
+type ExportFormat = 'svg' | 'dxf';
+
+const EXPORT_FORMATS: { id: ExportFormat; label: string; hint: string }[] = [
+  {
+    id: 'svg',
+    label: 'SVG',
+    hint: 'Standalone drawing for printing or for Inkscape and Illustrator',
+  },
+  {
+    id: 'dxf',
+    label: 'DXF',
+    hint: 'R12 drawing on named layers, for CAD or a CNC shop. Written in the units shown above.',
+  },
+];
 
 interface ResolvedLayout {
   layout: Layout;
@@ -93,32 +120,38 @@ export function LayoutViewer({
   if (!activeLayout) return null;
 
   /**
-   * Build the standalone SVG file for one sheet.
+   * Build a standalone file for one sheet, in either format.
    *
    * The sheet number is its position in the filtered list, so the file name
    * matches the tab the user clicked rather than an internal instance index.
    */
-  async function exportFileFor(entry: ResolvedLayout, index: number): Promise<ExportFile> {
-    const { renderSheetSvg, sheetFileName } = await loadSvgExporter();
-    return {
-      filename: sheetFileName({
-        sheetNumber: index + 1,
-        material: entry.material,
-        extension: 'svg',
-      }),
-      contents: renderSheetSvg({
-        layout: entry.layout,
-        stock: entry.stock,
-        parts,
-        material: entry.material,
-        config,
-        displayUnit,
-        fractionDenominator,
-        sheetNumber: index + 1,
-        sheetCount: filteredLayouts.length,
-      }),
-      mimeType: SVG_MIME_TYPE,
+  async function exportFileFor(
+    format: ExportFormat,
+    entry: ResolvedLayout,
+    index: number,
+  ): Promise<ExportFile> {
+    const input = {
+      layout: entry.layout,
+      stock: entry.stock,
+      parts,
+      material: entry.material,
+      config,
+      displayUnit,
+      fractionDenominator,
+      sheetNumber: index + 1,
+      sheetCount: filteredLayouts.length,
     };
+    const filename = sheetFileName({
+      sheetNumber: index + 1,
+      material: entry.material,
+      extension: format,
+    });
+
+    if (format === 'dxf') {
+      return { filename, contents: renderSheetDxf(input), mimeType: DXF_MIME_TYPE };
+    }
+    const { renderSheetSvg } = await loadSvgExporter();
+    return { filename, contents: renderSheetSvg(input), mimeType: SVG_MIME_TYPE };
   }
 
   /** Run an export, surfacing failures instead of doing nothing visible. */
@@ -168,7 +201,10 @@ export function LayoutViewer({
           {({ zoomIn, zoomOut, resetTransform }) => (
             <>
               {/* Controls Overlay */}
-              <div className="absolute top-4 right-4 z-10 flex flex-col gap-2">
+              {/* `items-end` so each cluster is as wide as its own contents -
+                  a stretched flex column would pad the zoom buttons out to the
+                  width of the export rows below them. */}
+              <div className="absolute top-4 right-4 z-10 flex flex-col items-end gap-2">
                 <div className="flex bg-slate-950/80 backdrop-blur-sm border border-slate-700 rounded-lg shadow-lg overflow-hidden">
                   <button
                     type="button"
@@ -241,34 +277,55 @@ export function LayoutViewer({
                   </button>
                 </div>
 
-                {/* Export cluster */}
+                {/* Export cluster: one row per format */}
                 <div className="flex flex-col bg-slate-950/80 backdrop-blur-sm border border-slate-700 rounded-lg shadow-lg overflow-hidden text-xs">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void runExport(async () => {
-                        downloadFile(await exportFileFor(activeLayout, safeIndex));
-                      });
-                    }}
-                    className="flex items-center gap-2 px-3 py-2 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors border-b border-slate-700"
-                    title="Download this sheet as a standalone SVG file"
-                  >
-                    <DownloadIcon />
-                    SVG (this sheet)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void runExport(async () => {
-                        await downloadFiles(await Promise.all(filteredLayouts.map(exportFileFor)));
-                      });
-                    }}
-                    className="flex items-center gap-2 px-3 py-2 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
-                    title="One file per sheet. Your browser will ask permission to download multiple files."
-                  >
-                    <DownloadIcon />
-                    SVG (all {filteredLayouts.length} sheets)
-                  </button>
+                  {EXPORT_FORMATS.map((format, rowIndex) => (
+                    <div
+                      key={format.id}
+                      className={`flex items-stretch ${
+                        rowIndex > 0 ? 'border-t border-slate-700' : ''
+                      }`}
+                    >
+                      <span className="flex items-center px-2.5 font-semibold tracking-wide text-slate-500 select-none">
+                        {format.label}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void runExport(async () => {
+                            downloadFile(await exportFileFor(format.id, activeLayout, safeIndex));
+                          });
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-2 border-l border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+                        title={format.hint}
+                      >
+                        <DownloadIcon />
+                        This sheet
+                      </button>
+                      {/* With one sheet, "all sheets" is the same action. */}
+                      {filteredLayouts.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void runExport(async () => {
+                              await downloadFiles(
+                                await Promise.all(
+                                  filteredLayouts.map((entry, index) =>
+                                    exportFileFor(format.id, entry, index),
+                                  ),
+                                ),
+                              );
+                            });
+                          }}
+                          className="flex items-center gap-1.5 px-3 py-2 border-l border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+                          title="One file per sheet. Your browser will ask permission to download multiple files."
+                        >
+                          <DownloadIcon />
+                          All {filteredLayouts.length}
+                        </button>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </div>
 
