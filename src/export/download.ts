@@ -15,6 +15,13 @@ export interface ExportFile {
 export const SVG_MIME_TYPE = 'image/svg+xml';
 
 /**
+ * DXF has no IANA-registered type. `image/vnd.dxf` is the vendor registration
+ * and the one CAD tools recognise; the file is plain ASCII either way, so the
+ * worst a browser does with it is offer to open it as text.
+ */
+export const DXF_MIME_TYPE = 'image/vnd.dxf';
+
+/**
  * Gap between successive downloads, in ms.
  *
  * Chrome throttles rapid programmatic downloads and will silently drop the ones
