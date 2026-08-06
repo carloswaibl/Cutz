@@ -11,6 +11,7 @@
  * where a standalone file can carry it.
  */
 
+import type { CutPlan } from '../../domain/cutplan';
 import { parseStockInstanceId } from '../../domain/instances';
 import type { Layout, Material, Part, SolverConfig, Stock } from '../../domain/types';
 import type { DisplayUnit } from '../state/types';
@@ -27,6 +28,14 @@ export interface SheetSvgProps {
   fractionDenominator: number;
   hoveredPartId: string | null;
   onHoverPart: (partId: string | null) => void;
+  /**
+   * Cut-plan overlays, passed straight through. The viewer drives these from
+   * the same flag it hands to the exporters, so the diagram on screen and the
+   * file the user downloads always show the same thing.
+   */
+  cutPlan?: CutPlan | null;
+  showCutLines?: boolean;
+  showPartNumbers?: boolean;
 }
 
 export function SheetSvg({
@@ -39,6 +48,9 @@ export function SheetSvg({
   fractionDenominator,
   hoveredPartId,
   onHoverPart,
+  cutPlan = null,
+  showCutLines = false,
+  showPartNumbers = false,
 }: SheetSvgProps) {
   const sheetLabel = sheetLabelFor(layout.stockInstanceId);
 
@@ -55,6 +67,9 @@ export function SheetSvg({
         theme={SCREEN_THEME}
         hoveredPartId={hoveredPartId}
         onHoverPart={onHoverPart}
+        cutPlan={cutPlan}
+        showCutLines={showCutLines}
+        showPartNumbers={showPartNumbers}
       />
 
       {/* Sheet label overlay */}

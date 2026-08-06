@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { TransformComponent, TransformWrapper } from 'react-zoom-pan-pinch';
+import type { CutPlan } from '../../domain/cutplan';
 import type { Layout, Material, Part, SolverConfig, Stock } from '../../domain/types';
 import {
   DXF_MIME_TYPE,
@@ -11,6 +12,7 @@ import {
 import { renderSheetDxf } from '../../export/dxf';
 import { sheetFileName } from '../../export/filename';
 import type { DisplayUnit } from '../state/types';
+import { CutSequenceList } from './print/CutSequenceList';
 import { SheetSvg } from './SheetSvg';
 
 /**
@@ -63,6 +65,11 @@ interface LayoutViewerProps {
   activeSheetIndex: number;
   onActiveSheetChange: (index: number) => void;
   selectedMaterialId: string;
+  /** Cut plan per stock instance id. */
+  planByInstanceId: ReadonlyMap<string, CutPlan>;
+  showCutSequence: boolean;
+  onShowCutSequenceChange: (show: boolean) => void;
+  cutPlanError: string | null;
 }
 
 export function LayoutViewer({
@@ -76,6 +83,10 @@ export function LayoutViewer({
   activeSheetIndex,
   onActiveSheetChange,
   selectedMaterialId,
+  planByInstanceId,
+  showCutSequence,
+  onShowCutSequenceChange,
+  cutPlanError,
 }: LayoutViewerProps) {
   const [exportError, setExportError] = useState<string | null>(null);
 
@@ -119,17 +130,32 @@ export function LayoutViewer({
   const activeLayout = filteredLayouts[safeIndex];
   if (!activeLayout) return null;
 
+  const activePlan = planByInstanceId.get(activeLayout.layout.stockInstanceId) ?? null;
+  /**
+   * The overlay only goes on when there is a plan that was actually proved. A
+   * sheet whose search hit its budget, or whose layout is not cuttable at all,
+   * gets the diagram it always had - never a partial set of blade lines the
+   * operator would follow off the end of the sheet.
+   */
+  const activeOverlay = showCutSequence && activePlan !== null && activePlan.status === 'complete';
+
   /**
    * Build a standalone file for one sheet, in either format.
    *
    * The sheet number is its position in the filtered list, so the file name
    * matches the tab the user clicked rather than an internal instance index.
+   *
+   * The overlay flags come from the same toggle the on-screen diagram reads, so
+   * an exported file always matches the diagram the user was looking at when
+   * they asked for it.
    */
   async function exportFileFor(
     format: ExportFormat,
     entry: ResolvedLayout,
     index: number,
   ): Promise<ExportFile> {
+    const plan = planByInstanceId.get(entry.layout.stockInstanceId) ?? null;
+    const overlay = showCutSequence && plan !== null && plan.status === 'complete';
     const input = {
       layout: entry.layout,
       stock: entry.stock,
@@ -140,6 +166,9 @@ export function LayoutViewer({
       fractionDenominator,
       sheetNumber: index + 1,
       sheetCount: filteredLayouts.length,
+      cutPlan: plan,
+      showCutLines: overlay,
+      showPartNumbers: overlay,
     };
     const filename = sheetFileName({
       sheetNumber: index + 1,
@@ -277,6 +306,30 @@ export function LayoutViewer({
                   </button>
                 </div>
 
+                {/* Cut sequence toggle.
+                    One switch for the diagram, the printed pages and both
+                    export formats: a file that shows different cuts from the
+                    screen it was exported from is worse than no file. */}
+                <button
+                  type="button"
+                  onClick={() => onShowCutSequenceChange(!showCutSequence)}
+                  disabled={activePlan === null}
+                  aria-pressed={showCutSequence}
+                  title={
+                    activePlan === null
+                      ? 'No cut plan for this sheet'
+                      : 'Show the derived cut order on the diagram, in exports, and in print'
+                  }
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg border shadow-lg backdrop-blur-sm text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                    showCutSequence && activePlan !== null
+                      ? 'bg-amber-500/15 border-amber-500/50 text-amber-300'
+                      : 'bg-slate-950/80 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white'
+                  }`}
+                >
+                  <CutLinesIcon />
+                  Cut sequence
+                </button>
+
                 {/* Export cluster: one row per format */}
                 <div className="flex flex-col bg-slate-950/80 backdrop-blur-sm border border-slate-700 rounded-lg shadow-lg overflow-hidden text-xs">
                   {EXPORT_FORMATS.map((format, rowIndex) => (
@@ -360,6 +413,9 @@ export function LayoutViewer({
                     fractionDenominator={fractionDenominator}
                     hoveredPartId={hoveredPartId}
                     onHoverPart={onHoverPart}
+                    cutPlan={activePlan}
+                    showCutLines={activeOverlay}
+                    showPartNumbers={activeOverlay}
                   />
                 </div>
               </TransformComponent>
@@ -367,6 +423,41 @@ export function LayoutViewer({
           )}
         </TransformWrapper>
       </div>
+      {/* Cut sequence panel.
+          Below the diagram rather than beside it: the viewer sits in a narrow
+          column, and a five-column step table squeezed in next to a cut diagram
+          would be unreadable in exactly the place precision matters most. */}
+      {activePlan !== null && (
+        <details
+          open={showCutSequence}
+          className="bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden"
+        >
+          <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium text-slate-200 hover:bg-slate-800/40 transition-colors">
+            Cut sequence
+            <span className="ml-2 text-xs font-normal text-slate-500">
+              {activePlan.status === 'complete'
+                ? `${activePlan.steps.length} cuts on sheet ${safeIndex + 1} · a valid order, not reordered for fewest fence changes`
+                : 'unavailable for this sheet'}
+            </span>
+          </summary>
+          <div className="px-4 pb-4">
+            <CutSequenceList
+              plan={activePlan}
+              parts={parts}
+              displayUnit={displayUnit}
+              fractionDenominator={fractionDenominator}
+              variant="screen"
+              showHeading={false}
+            />
+          </div>
+        </details>
+      )}
+
+      {cutPlanError && (
+        <div className="text-center text-xs text-red-400" role="alert">
+          Cut sequence unavailable: {cutPlanError}
+        </div>
+      )}
       {exportError && (
         <div className="text-center text-xs text-red-400" role="alert">
           Export failed: {exportError}
@@ -377,6 +468,28 @@ export function LayoutViewer({
         browser will ask permission the first time.
       </div>
     </div>
+  );
+}
+
+/** Blade lines crossing a sheet, for the cut sequence toggle. */
+function CutLinesIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      xmlns="http://www.w3.org/2000/svg"
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect width="18" height="18" x="3" y="3" rx="2" />
+      <path d="M3 11h18" strokeDasharray="3 2" />
+      <path d="M13 11v10" strokeDasharray="3 2" />
+    </svg>
   );
 }
 

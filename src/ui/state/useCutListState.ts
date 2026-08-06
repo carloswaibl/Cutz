@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useReducer } from 'react';
+import { buildCutPlans, type CutPlan } from '../../domain/cutplan';
 import type { Material, Part, Result, Stock } from '../../domain/types';
 import { solve } from '../../solver/index';
 import { BOOKSHELF_PRESET, PRESETS } from './presets';
@@ -14,6 +15,7 @@ const INITIAL_STATE: AppState = {
   activeSheetIndex: 0,
   hoveredPartId: null,
   selectedMaterialId: 'all',
+  showCutSequence: true,
 };
 
 let nextId = 1;
@@ -42,6 +44,9 @@ function cutListReducer(state: AppState, action: CutListAction): AppState {
 
     case 'SET_MATERIAL_FILTER':
       return { ...state, selectedMaterialId: action.materialId, activeSheetIndex: 0 };
+
+    case 'SET_CUT_SEQUENCE':
+      return { ...state, showCutSequence: action.show };
 
     case 'ADD_MATERIAL':
       return { ...state, materials: [...state.materials, action.material] };
@@ -148,6 +153,41 @@ export function useCutListState(): CutListStateReturn {
     }
   }, [state.parts, state.stock, state.config]);
 
+  /**
+   * Cut plans for the current result, built eagerly.
+   *
+   * `docs/plan-m3.md` PR 1 measured this across all ten fixtures: 0.09-2.21ms
+   * to plan every sheet against 2.4-22.8ms to solve, under 10% of solve time in
+   * every case. That is well below the threshold where a lazy path and a
+   * loading state would earn their complexity, and the plans only rebuild when
+   * the result does.
+   *
+   * `buildCutPlans` throws when a layout names a part or a stock entry the
+   * project does not contain. That is an internal inconsistency rather than
+   * user input, so it is caught the same way `solve` is and reported, never
+   * swallowed into an empty cut list the user would read as "no cuts needed".
+   */
+  const { cutPlans, cutPlanError } = useMemo<{
+    cutPlans: CutPlan[];
+    cutPlanError: string | null;
+  }>(() => {
+    if (!result) return { cutPlans: [], cutPlanError: null };
+    try {
+      return {
+        cutPlans: buildCutPlans(result, {
+          parts: state.parts,
+          stock: state.stock,
+          materials: state.materials,
+          config: state.config,
+        }),
+        cutPlanError: null,
+      };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { cutPlans: [], cutPlanError: msg };
+    }
+  }, [result, state.parts, state.stock, state.materials, state.config]);
+
   // Action helpers
   const setUnit = useCallback((unit: DisplayUnit) => {
     dispatch({ type: 'SET_UNIT', unit });
@@ -167,6 +207,10 @@ export function useCutListState(): CutListStateReturn {
 
   const setSelectedMaterialId = useCallback((materialId: string | 'all') => {
     dispatch({ type: 'SET_MATERIAL_FILTER', materialId });
+  }, []);
+
+  const setShowCutSequence = useCallback((show: boolean) => {
+    dispatch({ type: 'SET_CUT_SEQUENCE', show });
   }, []);
 
   const addMaterial = useCallback((mat: Omit<Material, 'id'>): string => {
@@ -242,12 +286,15 @@ export function useCutListState(): CutListStateReturn {
     ...state,
     result,
     solverError,
+    cutPlans,
+    cutPlanError,
     dispatch,
     setUnit,
     setConfig,
     setActiveSheetIndex,
     setHoveredPartId,
     setSelectedMaterialId,
+    setShowCutSequence,
     addMaterial,
     updateMaterial,
     deleteMaterial,

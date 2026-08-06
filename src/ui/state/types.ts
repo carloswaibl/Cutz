@@ -1,3 +1,4 @@
+import type { CutPlan } from '../../domain/cutplan';
 import type { Material, Part, Result, SolverConfig, Stock } from '../../domain/types';
 
 export type DisplayUnit = 'imperial-fraction' | 'imperial-decimal' | 'metric-mm' | 'metric-cm';
@@ -12,6 +13,16 @@ export interface AppState {
   activeSheetIndex: number;
   hoveredPartId: string | null;
   selectedMaterialId: string | 'all';
+  /**
+   * Whether the derived cut sequence is shown: blade lines and step numbers on
+   * the diagram, piece letters on the parts, and the step list beside it.
+   *
+   * It lives in app state rather than inside the viewer because the printed
+   * pages and the exported SVG/DXF read it too. One switch for all four is what
+   * keeps the promise that the file a user exports matches the diagram they
+   * were looking at when they asked for it.
+   */
+  showCutSequence: boolean;
 }
 
 export type CutListAction =
@@ -21,6 +32,7 @@ export type CutListAction =
   | { type: 'SET_ACTIVE_SHEET'; index: number }
   | { type: 'SET_HOVERED_PART'; partId: string | null }
   | { type: 'SET_MATERIAL_FILTER'; materialId: string | 'all' }
+  | { type: 'SET_CUT_SEQUENCE'; show: boolean }
   | { type: 'ADD_MATERIAL'; material: Material }
   | { type: 'UPDATE_MATERIAL'; id: string; material: Partial<Material> }
   | { type: 'DELETE_MATERIAL'; id: string }
@@ -46,6 +58,12 @@ export type CutListAction =
 export interface CutListStateReturn extends AppState {
   result: Result | null;
   solverError: string | null;
+  /**
+   * One plan per layout in `result`, in the same order. Empty when there is no
+   * result, or when the plans could not be built.
+   */
+  cutPlans: CutPlan[];
+  cutPlanError: string | null;
   dispatch: React.Dispatch<CutListAction>;
   // Action helpers
   setUnit: (unit: DisplayUnit) => void;
@@ -53,6 +71,7 @@ export interface CutListStateReturn extends AppState {
   setActiveSheetIndex: (index: number) => void;
   setHoveredPartId: (id: string | null) => void;
   setSelectedMaterialId: (materialId: string | 'all') => void;
+  setShowCutSequence: (show: boolean) => void;
   addMaterial: (material: Omit<Material, 'id'>) => string;
   updateMaterial: (id: string, material: Partial<Material>) => void;
   deleteMaterial: (id: string) => void;

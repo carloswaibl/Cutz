@@ -27,7 +27,8 @@ import type { CutPlan, CutStep } from '../../domain/cutplan';
 import { placementRect, type Rect, usableArea } from '../../domain/geometry';
 import { parseStockInstanceId } from '../../domain/instances';
 import type { Layout, Material, Part, Placement, SolverConfig, Stock } from '../../domain/types';
-import { formatLength, type Unit } from '../../domain/units';
+import { formatLength } from '../../domain/units';
+import { toFormatUnit } from '../format';
 import type { DisplayUnit } from '../state/types';
 import type { SheetTheme } from './sheetTheme';
 
@@ -102,11 +103,6 @@ function partColor(theme: SheetTheme, partIndex: number): string {
   return color!;
 }
 
-/** Map DisplayUnit to the formatLength `Unit`. */
-function toFormatUnit(du: DisplayUnit): Unit {
-  return du.startsWith('imperial') ? 'in' : 'mm';
-}
-
 /** Format a mm value for display inside the SVG diagram. */
 function fmtLen(mm: number, displayUnit: DisplayUnit, denominator: number): string {
   return formatLength(mm, {
@@ -171,8 +167,14 @@ function findPart(parts: Part[], partId: string): Part | undefined {
   return parts.find((p) => p.id === partId);
 }
 
-/** Key identifying a placement by its position, which is unique within a layout. */
-function placementKey(placement: Placement): string {
+/**
+ * Key identifying a placement by its position, which is unique within a layout.
+ *
+ * Exported because the printed cut list looks up the same piece letters this
+ * figure draws on the parts. Two keying schemes for one lookup would put a
+ * letter on the diagram that no row in the table matches.
+ */
+export function placementKey(placement: Placement): string {
   return `${placement.partId}-${placement.x}-${placement.y}`;
 }
 
