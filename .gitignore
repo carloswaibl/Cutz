@@ -33,3 +33,6 @@ pnpm-debug.log*
 .env
 .env.*
 !.env.example
+
+# local agent tooling
+.agents/
