@@ -510,8 +510,13 @@ Also confirmed live in the running app:
   files spaced ~300ms apart; the exported SVG carries 19 blade lines matching the 19 printed steps,
   and no `class=` attribute leaks into it.
 
-**Still owed: a human print-preview pass in Safari.** Everything above is Chrome. Firefox remains
-checked-but-not-blocking per §6.
+**Safari confirmed** by a human print-preview pass against the seven-step checklist in PR #19 -
+page breaks, the colour-managed fills and kerf lines, the repeated table header, the cut-sequence
+toggle, the filtered printout, and legibility at 100%. Chrome and Safari therefore both pass, which
+closes §6's browser-print-inconsistency risk for the two engines it names. Firefox remains
+checked-but-not-blocking.
+
+**M3 exits here.** All six criteria in §1 are met, with criterion 2 as amended.
 
 ---
 
