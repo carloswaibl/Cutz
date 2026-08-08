@@ -322,7 +322,7 @@ geometry are exact.
 
 ---
 
-### PR 3 - `feat/export-dxf`
+### PR 3 - `feat/export-dxf` - DONE
 
 **Focus:** hand-rolled DXF R12 writer.
 
@@ -333,9 +333,39 @@ geometry are exact.
 - Tests: golden-file comparison for one fixture; quadrant assertion for the Y-flip; layer presence and entity counts; inch and mm variants both emitted with the right `$INSUNITS`.
 - Manual verification: open an exported file in a DXF viewer and confirm scale and orientation. Record which viewer was used in the PR description.
 
+Landed with 28 new tests (444 total). Decisions made during the work, binding on PRs 4-5:
+
+- **R12 with closed `POLYLINE`/`VERTEX`/`SEQEND`, not `LWPOLYLINE`.** §4.2 asked for R12 *and*
+  `LWPOLYLINE`, which contradict each other: `LWPOLYLINE` is an R13+ entity. R13 and R2000 were
+  both weighed and rejected - from R13 on, a DXF needs entity handles, a `CLASSES` section, space
+  blocks and an `OBJECTS` dictionary, scaffolding whose only real test is whether a CAD seat
+  accepts the file.
+- **The Y flip lives in one tested helper, `sheetToDxf`.** A mirrored drawing passes every overlap
+  check and cuts grain-locked parts the wrong way round, so it is verified by parsing the emitted
+  file back and comparing rects to the solver's placements on every fixture, plus a quadrant
+  assertion.
+- **Extents are the sheet, not the SVG viewBox.** PR 2 said to take `$EXTMIN`/`$EXTMAX` from
+  `figureViewBox`; that turned out to be wrong, because the viewBox carries label padding in which
+  nothing is drawn. A DXF has no physical size, only numbers, so its extents must bound the
+  geometry.
+- **Coordinates follow the display unit, with `$INSUNITS` to match** (`1`/`4`/`5`), which is the
+  opposite of PR 2's decision for SVG and deliberately so: an SVG states a physical size, while a
+  DXF has only a document-level unit declaration a CAD user acts on.
+- **`sheetFileName` moved to `src/export/filename.ts`.** `svg.ts` pulls `react-dom/server` and is a
+  lazily-loaded chunk, so a statically-imported DXF writer reaching into it for a filename would
+  have undone that split.
+- **The DXF writer is imported statically, not lazily.** It is a headless string builder with no
+  renderer behind it, so it costs a few kB, and splitting it would buy nothing but a second way for
+  an export to fail offline. Main bundle stayed at 94.3 kB gzip plus the 58.4 kB `svg` chunk.
+- **Cut lines are wired but off**, as PR 2's SVG overlays are. PR 4 turns them on for screen, print
+  and both exports together.
+
+Verified end to end by exporting an imperial sheet from the running app, reading it back, and
+confirming extents of 48x96 in and a layout matching the on-screen diagram in both axes.
+
 ---
 
-### PR 4 - `feat/print-cut-sheets`
+### PR 4 - `feat/print-cut-sheets` - DONE
 
 **Focus:** the printed document.
 
@@ -348,6 +378,61 @@ geometry are exact.
 - Tests: `renderToStaticMarkup` of `PrintDocument` for a multi-sheet fixture - asserts page count, one cut list per sheet, step numbering continuity, and that unplaced parts appear on the summary page.
 - Browser verification: print preview in Chrome and Safari. Check page breaks, that no sheet diagram splits across pages, that text is legible at 100%, and that the grain arrow and kerf lines survive the light palette.
 
+Landed with 17 new tests (461 total). Decisions made during the work, binding on PR 5:
+
+- **One toggle drives all four destinations.** `AppState.showCutSequence`, default on, controls the
+  blade lines and piece letters on the screen diagram, the same overlays in the SVG and DXF
+  exports, and the step list on the printed pages. PR 2 and PR 3 each promised "PR 4 turns them on
+  together"; making that a single piece of state rather than four call sites is what makes it true.
+  It lives in `AppState` rather than in `LayoutViewer` precisely because print and export read it.
+- **Print follows the material filter**, exactly as the export buttons beside it do. Two controls in
+  one cluster with different scopes would be a trap. The summary page says which material a
+  filtered printout covers, and its waste figure is over the sheets on the printout rather than the
+  solver's project-wide number - with a filter on, those differ.
+- **The cut sequence panel sits below the diagram, not beside it.** §5 said beside; the viewer is in
+  a 5/12 grid column and a five-column step table squeezed in next to a cut diagram is unreadable
+  in the place precision matters most.
+- **A sheet may take two pages, and that is the design.** §1 said "one sheet per page". A 4x8 sheet
+  is 2438mm against roughly 270mm of usable page, so the diagram prints near 1:9 whatever it is
+  given; the bookshelf preset's sheet plus its 19-step sequence measures about 1290px against
+  1032px of A4 content box. `break-after: page` per sheet guarantees sheets never *share* a page,
+  which is the property that actually matters, and nothing is shrunk to fit. Putting the sequence
+  in the column beside the diagram was tried and reverted: at 55% width its Yields column wraps to
+  three lines a row, costing more page than the diagram saved.
+- **The sheet page layout adapts to the stock aspect.** A tall sheet leaves the page two-thirds
+  empty beside it, so the cut list goes there; a wide sheet takes the full width with the list
+  underneath. The fixtures are all 2440x1220 and the `BOOKSHELF_PRESET` sheet is 1219x2438, so both
+  branches are exercised - a test pins which one is chosen.
+- **`showTitle` is off on the printed pages**, against PR 2's note that they would set it. The
+  title block is sized in sheet millimetres for a standalone full-width SVG; on a page column it
+  renders around 1.5mm tall. The page carries an HTML header instead, which is legible at real size.
+- **`print.css` uses no `!important`.** An `!important` in a print sheet is invisible until someone
+  prints. `html body` and `body > #root > *` win on specificity instead, and the diagram is sized
+  in `PrintSheetPage`'s markup rather than by overriding `SheetFigure`'s inline styles from a
+  stylesheet that cannot know the stock's aspect ratio.
+- **`placementKey` is exported from `SheetFigure`** so the printed cut list looks up the same piece
+  letters the figure draws. Two keying schemes for one lookup would put a letter on the diagram
+  that no row in the table matches.
+- **`toFormatUnit` moved to `src/ui/format.ts`** alongside a new `formatDisplayLength`, so the
+  diagram, the tables and the printed pages give one answer. The screen rendering is unchanged -
+  the `screen-sheet-1.svg` golden still matches byte for byte.
+- **A plan that is not `complete` shows no overlay and no steps**, with PR 1's two distinct
+  messages: "cannot be cut on a table saw" for `invalid`, "unavailable for this sheet" for
+  `unverified`. `fence < 0` renders "trim flush" rather than a negative number, per PR 1.
+- **Main bundle is 100.4 kB gzip**, up from 94.3 kB, with the 58.4 kB `svg` chunk unchanged. Print
+  renders in-app and needs no `react-dom/server`, so it is not lazily loaded - a shop with no wifi
+  must be able to print.
+
+**Known gap, surfaced not fixed here:** the units dropdown offers "Metric (cm)" but `formatLength`
+only knows `mm` and `in`, so that setting renders millimetres. The summary page's "Units" row
+derives its wording from `toFormatUnit` rather than the setting name so it cannot claim
+centimetres, but the dropdown itself is still wrong. Worth a fix; it is not this milestone's.
+
+**Not verified in-browser:** real print-preview pagination. The printed pages were rendered and
+measured in Chrome by applying the print rules outside their media query, which checks layout,
+palette and page height but not the browser's own page breaking. A human print-preview pass in
+Chrome and Safari is still owed - PR 5.
+
 ---
 
 ### PR 5 - `chore/m3-exit-verification`
@@ -357,6 +442,9 @@ geometry are exact.
 - Update `CLAUDE.md` current status to M3 complete, M4 next. Add `cutplan.ts` and the `export/` files to the directory structure block.
 - Update `docs/solver-design.md` §4 to note `checkGuillotine` now delegates to `cutplan.ts`.
 - **Pre-existing gap to close here:** `BOOKSHELF_PRESET` has 2 parts, while `plan-m2.md` §1.6 promises a realistic 3-unit bookshelf onboarding project. A 2-part preset also makes a thin first impression of the printed cut sheet, which is the thing this milestone exists to sell. Bring the preset in line with `test/fixtures/bookshelf.json`.
+  - **This is now stale.** The preset has 2 part *rows* but 30 instances - 6 sides and 24 shelves over 3 sheets - which is the 3-unit bookshelf `plan-m2.md` promised. Confirm and drop the item.
+- **Owed from PR 4:** a real print-preview pass in Chrome and Safari. PR 4 measured the printed pages by applying the print rules outside their media query, which does not exercise the browser's own page breaking.
+- **Owed from PR 4:** the units dropdown offers "Metric (cm)" but `formatLength` only knows `mm` and `in`, so that setting silently renders millimetres. Either implement cm or remove the option.
 - `npm run typecheck && npm run test:run && npm run lint && npm run build`.
 
 ---

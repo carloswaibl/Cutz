@@ -1,0 +1,73 @@
+/**
+ * Print stylesheet.
+ *
+ * Print is a third destination alongside screen and exported files, not the
+ * screen with a few things hidden. So the rule here is blunt: on paper, the
+ * whole interactive app is `display: none` and `PrintDocument` is what prints.
+ * Nothing in the dark UI has to be individually neutralised, and a card added
+ * to the app next month cannot leak onto a cut sheet.
+ *
+ * Every rule here wins on specificity rather than `!important`. That is not
+ * style points: an `!important` in a print sheet is invisible until someone
+ * prints, and a rule that quietly outranks the thing it was meant to cooperate
+ * with is how print output drifts from what the screen promised. The print
+ * pages are therefore laid out so nothing needs overriding - see
+ * `PrintSheetPage`, which sizes the diagram in the markup rather than fighting
+ * the figure's own inline styles from here.
+ */
+
+/* The document exists in the DOM at all times so print preview is instant and
+   shows exactly what will come out. It is simply not on screen. */
+.cutz-print-document {
+  display: none;
+}
+
+@page {
+  /* The user's print dialog picks paper and orientation. A hardcoded A4 is
+     wrong in the US and a hardcoded Letter is wrong everywhere else. */
+  size: auto;
+  margin: 12mm;
+}
+
+@media print {
+  /*
+   * `html body` rather than `body` so this beats the dark app background in
+   * `index.css` regardless of which file the bundler puts first.
+   *
+   * Colour is load-bearing on these pages: the part fills identify parts and
+   * the kerf lines show where the blade runs. Browsers drop backgrounds when
+   * printing unless told not to.
+   */
+  html body {
+    background-color: #ffffff;
+    color: #0f172a;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  /* The interactive app, whatever it grows into, does not print. The `#root`
+     id puts this above any utility class on the app shell. */
+  body > #root > *:not(.cutz-print-document) {
+    display: none;
+  }
+
+  body > #root > .cutz-print-document {
+    display: block;
+  }
+
+  .cutz-print-page {
+    break-after: page;
+    /* Not `break-inside: avoid` - a sheet with a long cut sequence should flow
+       onto a second page rather than shrink to fit one. Two readable pages beat
+       one that needs a magnifier. */
+  }
+
+  .cutz-print-page-last {
+    break-after: auto;
+  }
+
+  /* Links in the printed document would print their href in some engines. */
+  .cutz-print-document a {
+    text-decoration: none;
+  }
+}

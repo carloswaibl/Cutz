@@ -8,6 +8,8 @@ interface HeaderProps {
   onUnitChange: (unit: DisplayUnit) => void;
   onEffortChange: (effort: SolverEffort) => void;
   onLoadPreset: (presetKey: string) => void;
+  /** Disabled until there is something to print. */
+  canPrint: boolean;
 }
 
 export function Header({
@@ -16,6 +18,7 @@ export function Header({
   onUnitChange,
   onEffortChange,
   onLoadPreset,
+  canPrint,
 }: HeaderProps) {
   return (
     <header className="bg-slate-900/90 border-b border-slate-800/80 backdrop-blur-md sticky top-0 z-30 px-4 sm:px-6 py-3.5 shadow-lg">
@@ -38,8 +41,12 @@ export function Header({
           </div>
         </div>
 
-        {/* Action Controls Toolbar */}
-        <div className="flex flex-wrap items-center gap-3">
+        {/* Action Controls Toolbar.
+            `justify-end` so that when the row wraps - it does below roughly
+            1700px, once the Print button joins the three selects - the wrapped
+            button lands under the controls rather than orphaned on the far left
+            beneath the logo. */}
+        <div className="flex flex-wrap items-center justify-end gap-3">
           {/* Preset Selector */}
           <div className="flex items-center gap-1.5 bg-slate-950/60 p-1 rounded-lg border border-slate-800">
             <label htmlFor="preset-select" className="text-xs font-medium text-slate-400 px-2">
@@ -93,6 +100,38 @@ export function Header({
               <option value="thorough">Thorough (Deep Search)</option>
             </select>
           </div>
+
+          {/* Print: the milestone's whole point is a sheet you carry to the saw,
+              so this is a primary action rather than a menu item. */}
+          <button
+            type="button"
+            onClick={() => window.print()}
+            disabled={!canPrint}
+            title={
+              canPrint
+                ? 'Print the cut sheets: one page per sheet, plus a project summary'
+                : 'Solve a layout first - there is nothing to print yet'
+            }
+            className="flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold bg-amber-500 text-slate-950 border border-amber-400 hover:bg-amber-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-amber-500"
+          >
+            <svg
+              aria-hidden="true"
+              xmlns="http://www.w3.org/2000/svg"
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M6 9V2h12v7" />
+              <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+              <rect width="12" height="8" x="6" y="14" />
+            </svg>
+            Print cut sheets
+          </button>
         </div>
       </div>
     </header>
