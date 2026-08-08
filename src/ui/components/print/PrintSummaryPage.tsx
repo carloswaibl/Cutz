@@ -186,11 +186,10 @@ function SettingRow({ label, value }: { label: string; value: string }) {
 /**
  * What unit the numbers on this printout are actually in.
  *
- * Derived from `toFormatUnit` rather than from the `DisplayUnit` name, because
- * those two disagree: `formatLength` only knows `mm` and `in`, so the app's
- * "Metric (cm)" setting renders millimetres like the mm setting does. Saying
- * "centimetres" on a page whose numbers are millimetres would be the one error
- * on it that turns a correct layout into scrap.
+ * Still derived from `toFormatUnit` rather than asserted from the `DisplayUnit`
+ * name. The two agree now that `metric-cm` is gone, but naming a unit the page's
+ * numbers are not in is the one error on a cut sheet that turns a correct layout
+ * into scrap, so this reads the same function the numbers were formatted by.
  */
 function unitLabel(displayUnit: DisplayUnit): string {
   if (toFormatUnit(displayUnit) === 'in') {

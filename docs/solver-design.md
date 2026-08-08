@@ -82,6 +82,8 @@ Every solver result is validated against seven strict domain invariants:
 2. **Usable Area Containment:** Placements must reside entirely within $[ \text{edgeTrim}, W - \text{edgeTrim} ] \times [ \text{edgeTrim}, H - \text{edgeTrim} ]$.
 3. **Rotation Legality:** `rotated === true` is only permitted when `rotationPolicy === 'free90'`.
 4. **Guillotine Decomposability:** Placements on a sheet must be separable by a recursive sequence of full edge-to-edge cuts. Checked via a memoized recursive bisection algorithm with step caps to prevent exponential blowup on pathological inputs.
+
+   Since M3 this check no longer owns that search. `checkGuillotine` is a thin wrapper over `buildCutTree` in `src/domain/cutplan.ts`, which returns the tree it walked rather than a boolean; the checker just asks whether one exists. The two used to be separate implementations of the same rule, and a checker holding a private copy of the logic eventually agrees with the bug it exists to catch. `CheckStatus` and `DEFAULT_MAX_GUILLOTINE_STEPS` live in `cutplan.ts` and are re-exported from `validate.ts`, so the dependency runs one way and existing import paths still resolve.
 5. **Material Matching:** Placements must only occur on stock matching the part's `materialId`.
 6. **Quantity Accounting:** For every part, $\text{placed qty} + \text{unplaced qty} == \text{requested qty}$.
 7. **Waste Correctness:** Recomputed `wastePct` and `totalWastePct` must match the reported result numbers.

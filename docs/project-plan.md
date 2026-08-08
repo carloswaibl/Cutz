@@ -165,4 +165,13 @@ CNC free-form nesting · 1D linear stock · offcut inventory · G-code · cut se
 1. **Imperial or metric first?** US hobbyist market is imperial and fractional (23-1/4"). Fractional input parsing is a small but real feature.
 2. **Do parts import as bounding boxes or true outlines?** For guillotine v1, bounding boxes are sufficient and much simpler. True outlines only matter for nesting.
 3. **How much of the sheet is usable?** Factory edges on plywood are often not square — does the app assume a default trim allowance?
-4. **Cut sequence output?** A layout is not the same as an order of operations. Sequencing rip cuts before crosscuts is a genuine usability win and a possible differentiator.
+4. ~~**Cut sequence output?**~~ **Resolved in M3 — shipped.** `domain/cutplan.ts` derives a full
+   guillotine cut order from each solved layout: every cut labelled rip or crosscut against the
+   sheet's grain axis, with its fence setting and the piece it consumes, ordered depth-first so the
+   operator works one piece at a time. It appears on screen, on the printed page, and as blade
+   lines in the SVG and DXF exports. `validate.checkGuillotine` delegates to the same search, so
+   the checker and the plan cannot disagree.
+
+   **What it does not do:** reorder for operator efficiency. The plan is *a* valid cut order, not
+   one minimising fence changes, blade-height changes, or handling. That reordering is in the v2
+   backlog above, and the printed page says so on its face so the two are not confused.

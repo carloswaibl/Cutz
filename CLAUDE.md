@@ -71,6 +71,7 @@ src/
     validate.ts    # input validation, invariant checks
     geometry.ts    # Rect helpers: area, contains, separation, clearance, intersects
     instances.ts   # Part and Stock instance expansion utilities
+    cutplan.ts     # guillotine cut-tree search -> ordered cut plan (validate.ts delegates here)
   solver/
     types.ts       # Solver interface
     guillotine/    # v1 engine: free-rectangle guillotine packer
@@ -81,11 +82,17 @@ src/
     svg/           # SVG -> Part[]
     stl/           # STL -> Part
     errors.ts      # typed import errors with user-facing messages
-  export/
-    svg.ts
-    dxf.ts
+  export/          # may depend on src/ui/ renderers; domain/ and solver/ may not
+    svg.ts         # standalone SVG via renderToStaticMarkup - lazily loaded, pulls react-dom/server
+    dxf.ts         # hand-rolled R12 writer, headless, statically imported
+    download.ts    # Blob + anchor click, sequential with a gap for multi-file
+    filename.ts    # sheet filename slugs, kept out of the lazy svg chunk
     print.css
   ui/              # React components
+    format.ts      # display-unit formatting shared by diagram, tables and print
+    state/         # reducer, app state, presets
+    components/
+      print/       # print-only component tree, hidden on screen
   storage/         # IndexedDB project persistence
 test/
   fixtures/        # realistic projects: bookshelf, cabinet carcass, drawer boxes
@@ -93,6 +100,8 @@ test/
 docs/
   project-plan.md  # product roadmap and overall milestone breakdown
   plan-m1.md       # M1 implementation plan, scope, and PR sequence
+  plan-m2.md       # M2 implementation plan
+  plan-m3.md       # M3 implementation plan: cut plan, print, SVG/DXF export
   solver-design.md # M1 engine design, algorithms, invariants, and benchmarks
 ```
 
@@ -255,6 +264,18 @@ Things that have been decided against, or are easy to get wrong:
 
 ## Current status
 
-Milestone 2 (Minimal Usable App) is complete. The application now supports part/stock entry, unit conversions, live solver updates, and SVG cut diagram rendering.
+Milestone 3 (Export) is complete. On top of M2's part/stock entry, unit conversion, live solving
+and cut diagrams, the app now derives a guillotine cut plan per sheet, prints cut sheets with a
+numbered cut sequence, and exports each sheet as SVG and DXF R12.
 
-The next active milestone is **M3 (Export)**. See `docs/project-plan.md` for details. Ask before starting substantial work.
+Two conventions from M3 that are easy to break:
+
+- **Display units are `imperial-fraction | imperial-decimal | metric-mm`.** Metric is millimetres
+  only. `parseLength` still accepts a `cm` suffix on *input*; there is no cm display mode, and
+  adding one means moving `unitSystem` and `toFormatUnit` in `export/dxf.ts` together or the DXF
+  scales its geometry in one unit and prints its labels in another.
+- **`AppState.showCutSequence` drives four destinations at once** - the screen diagram, the printed
+  pages, the SVG export and the DXF export. Read it; do not re-derive an equivalent per call site.
+
+The next active milestone is **M4 (SVG import)**. See `docs/project-plan.md` for details. Ask
+before starting substantial work.

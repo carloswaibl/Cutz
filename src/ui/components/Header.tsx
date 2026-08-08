@@ -80,7 +80,6 @@ export function Header({
               <option value="imperial-fraction">Imperial (Fractions 1/16")</option>
               <option value="imperial-decimal">Imperial (Decimals in)</option>
               <option value="metric-mm">Metric (mm)</option>
-              <option value="metric-cm">Metric (cm)</option>
             </select>
           </div>
 

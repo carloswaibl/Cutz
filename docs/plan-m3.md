@@ -15,7 +15,9 @@ M3 introduces one genuinely new piece of domain logic: **the cut plan**. The sol
 **M3 exits when all of the following hold:**
 
 1. **Derived cut sequence.** Every layout decomposes into an ordered list of edge-to-edge cuts, each labelled rip or crosscut relative to the sheet's grain axis, with the fence setting for the cut and the piece it applies to. Replaying the plan's cuts reproduces exactly the solver's placements - asserted in tests on every fixture.
-2. **Print output.** `window.print()` produces one sheet per page: the cut diagram, that sheet's cut list, and that sheet's numbered cut sequence, on a light background that does not empty an ink cartridge. A final page carries the project summary, full cut list, saw settings, and any unplaced parts.
+2. **Print output.** `window.print()` gives each sheet its own page or pages - never sharing one with another sheet - carrying the cut diagram, that sheet's cut list, and that sheet's numbered cut sequence, on a light background that does not empty an ink cartridge. A final page carries the project summary, full cut list, saw settings, and any unplaced parts.
+
+   *Amended in PR 5.* This read "one sheet per page" until real print output was measured. It is not achievable: a sheet's cut sequence has no upper bound, and the `drawer-boxes` preset's first sheet needs 51 steps at 1533px against 1032px of A4 content box, so it exceeds a page on the sequence alone before the diagram is drawn. The achievable property - and the one that actually matters to someone at a saw - is that sheets never share a page. See PR 5 for the measurements.
 3. **SVG export.** The current sheet, or every sheet, exports as standalone SVG files that open correctly in Inkscape and Illustrator, dimensionally accurate to the millimetre, using the print palette rather than the dark screen theme.
 4. **DXF export.** The same sheets export as DXF R12 with parts, sheet boundary, trim line, cut lines, and labels on separate named layers, correct Y-axis orientation, and `$INSUNITS` matching the exported unit system.
 5. **No new runtime dependencies.** DXF is hand-rolled. SVG is rendered from the existing React component through `react-dom/server`, which ships inside the `react-dom` package already installed.
@@ -435,17 +437,86 @@ Chrome and Safari is still owed - PR 5.
 
 ---
 
-### PR 5 - `chore/m3-exit-verification`
+### PR 5 - `chore/m3-exit-verification` - DONE
 
-- Full-app pass against every fixture: solve, print-preview, export SVG, export DXF.
-- Resolve `project-plan.md` §9 question 4 - record that cut sequence output shipped, and what it does and does not do (§2, "no operator-efficiency reordering").
-- Update `CLAUDE.md` current status to M3 complete, M4 next. Add `cutplan.ts` and the `export/` files to the directory structure block.
-- Update `docs/solver-design.md` §4 to note `checkGuillotine` now delegates to `cutplan.ts`.
-- **Pre-existing gap to close here:** `BOOKSHELF_PRESET` has 2 parts, while `plan-m2.md` §1.6 promises a realistic 3-unit bookshelf onboarding project. A 2-part preset also makes a thin first impression of the printed cut sheet, which is the thing this milestone exists to sell. Bring the preset in line with `test/fixtures/bookshelf.json`.
-  - **This is now stale.** The preset has 2 part *rows* but 30 instances - 6 sides and 24 shelves over 3 sheets - which is the 3-unit bookshelf `plan-m2.md` promised. Confirm and drop the item.
-- **Owed from PR 4:** a real print-preview pass in Chrome and Safari. PR 4 measured the printed pages by applying the print rules outside their media query, which does not exercise the browser's own page breaking.
-- **Owed from PR 4:** the units dropdown offers "Metric (cm)" but `formatLength` only knows `mm` and `in`, so that setting silently renders millimetres. Either implement cm or remove the option.
-- `npm run typecheck && npm run test:run && npm run lint && npm run build`.
+**Focus:** close PR 4's two debts, verify the printed document in a real browser, and bring the
+docs in line with what shipped.
+
+- Full-app pass: solve, print, export SVG, export DXF.
+- Resolve `project-plan.md` §9 question 4 - cut sequence output shipped, with the
+  no-operator-efficiency-reordering non-goal stated.
+- `CLAUDE.md` to M3 complete / M4 next, with `cutplan.ts` and the `export/` and print files in the
+  directory structure block.
+- `docs/solver-design.md` §4 notes `checkGuillotine` delegates to `cutplan.ts`.
+- **Preset item dropped, confirmed stale.** `BOOKSHELF_PRESET` has 2 part *rows* but 30 instances -
+  6 sides and 24 shelves across 3 sheets - which is the 3-unit bookshelf `plan-m2.md` §1.6 asked
+  for. No change made.
+
+Landed with 460 tests, down one from 461. Decisions made during the work:
+
+- **"Metric (cm)" removed rather than implemented.** Metric woodworking is millimetres: sheet
+  goods, cabinet plans and saw scales are all specified in mm. `parseLength` already accepts a `cm`
+  suffix on input independently of the display setting, so `60cm` still parses to 600mm; what goes
+  is only the display mode. Implementing it properly would have put a third case in `Unit` in
+  `domain/units.ts`, which every table, the diagram, both print trees and both exporters fan out
+  from, to serve a unit nobody specifies plywood in.
+- **The cm gap was worse than PR 4 recorded.** PR 4 called it "silently renders millimetres". In
+  the DXF it was worse than silent: `unitSystem` scaled geometry by 1/10 and declared `$INSUNITS 5`
+  while `toFormatUnit` rendered the LABELS layer in millimetres - one file, geometry in centimetres,
+  dimension text in millimetres, and nothing on its face to say so. Deleting the setting deleted
+  that file. The two functions now carry a comment saying they move together or not at all.
+- **`dxf.ts` no longer keeps its own copy of `toFormatUnit`.** It imports the one in
+  `ui/format.ts`. Two copies of that mapping are exactly what let the geometry and the labels
+  disagree, and `ui/format.ts` pulls no React, so a statically-imported `dxf.ts` stays cheap.
+- **§1 exit criterion 2 amended from "one sheet per page".** Not achievable, and the print pass
+  proved it rather than argued it. Measured sheet-page heights against a 1032px A4 content box:
+
+  | Preset | Sheet page overflow (px) | Cut-sequence steps |
+  |---|---|---|
+  | `bookshelf` | +268, +268, +355 | 19, 19, 22 |
+  | `cabinet-carcass` | +239, +471, +616, +413 | 18, 26, 31, 24 |
+  | `drawer-boxes` | **+1594**, +951, +355 | 51, 32, 22 |
+
+  `drawer-boxes` sheet 1 is 2626px: a 1015px diagram block and a 1533px sequence. A sheet's cut
+  sequence has no upper bound, so no diagram cap and no column arrangement makes it one page - with
+  a zero-height diagram it still needs one and a half. PR 4's "a sheet may take two pages, and that
+  is the design" was right, and it is now what the criterion says. **No layout change was made**,
+  because none of the available ones fixes the case that motivated looking.
+- **The cut-sequence toggle is what actually governs page count.** `bookshelf` with the sequence
+  shown is 7 physical pages; with it hidden every sheet fits exactly one page and the document is 4.
+  That is the lever a user has, and it works.
+
+**Verified in Chrome, on the browser's own pagination.** PR 4 could only measure the printed pages
+by applying the print rules outside their media query. This pass drove headless Chrome over CDP and
+used `Page.printToPDF`, which runs the real page-breaking engine, then rendered the PDFs and read
+them. Confirmed across all three presets: no sheet shares a page with another, no sheet diagram
+splits across a break (`break-inside-avoid` holds - the largest diagram block measured 1015px
+against 1032px available, which is close enough to be worth knowing), the cut-sequence table
+repeats its header on continuation pages, the summary page comes last, and the light palette,
+grain arrow and kerf lines all survive `print-color-adjust: exact`.
+
+Also confirmed live in the running app:
+
+- **No horizontal overflow** on any print page - zero elements exceed the page box on any preset.
+  The text sitting flush to the right margin is right-aligned, not clipped.
+- **No viewBox clipping.** Content edges sit exactly on the viewBox on the left and top with 12.45mm
+  spare on the right and bottom, on all three presets, with the rotated height label's own transform
+  accounted for. PR 2's label-derived padding is doing its job.
+- **The material filter scopes print**, as the export buttons beside it do: filtering `drawer-boxes`
+  to Baltic Birch prints 2 sheets, and the summary page says "Filtered to 12mm Baltic Birch - other
+  materials are not on this printout" with waste over the printed sheets, not the project.
+- **Exports run through the real UI wiring.** SVG and DXF both produce correct MIME types, correct
+  provenance headers and `cutz-sheet-<n>-<material>.svg|dxf` filenames; "all sheets" delivers 3
+  files spaced ~300ms apart; the exported SVG carries 19 blade lines matching the 19 printed steps,
+  and no `class=` attribute leaks into it.
+
+**Safari confirmed** by a human print-preview pass against the seven-step checklist in PR #19 -
+page breaks, the colour-managed fills and kerf lines, the repeated table header, the cut-sequence
+toggle, the filtered printout, and legibility at 100%. Chrome and Safari therefore both pass, which
+closes §6's browser-print-inconsistency risk for the two engines it names. Firefox remains
+checked-but-not-blocking.
+
+**M3 exits here.** All six criteria in §1 are met, with criterion 2 as amended.
 
 ---
 
