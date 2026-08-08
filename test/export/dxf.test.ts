@@ -293,7 +293,6 @@ const UNIT_SCALE: Record<DisplayUnit, number> = {
   'imperial-fraction': 1 / 25.4,
   'imperial-decimal': 1 / 25.4,
   'metric-mm': 1,
-  'metric-cm': 1 / 10,
 };
 
 // ---------------------------------------------------------------------------
@@ -546,7 +545,6 @@ describe('renderSheetDxf units', () => {
     ['imperial-fraction', 1],
     ['imperial-decimal', 1],
     ['metric-mm', 4],
-    ['metric-cm', 5],
   ];
 
   it.each(cases)('declares $INSUNITS for %s', (displayUnit, insunits) => {
@@ -643,7 +641,7 @@ describe('renderSheetDxf provenance', () => {
   it('states the drawing unit it actually wrote', () => {
     const sheet = firstSheet('bookshelf');
     expect(render(sheet, { displayUnit: 'imperial-fraction' })).toContain('drawing units: in');
-    expect(render(sheet, { displayUnit: 'metric-cm' })).toContain('drawing units: cm');
+    expect(render(sheet, { displayUnit: 'metric-mm' })).toContain('drawing units: mm');
   });
 
   it('keeps comments at the head of the file, where they are legal', () => {

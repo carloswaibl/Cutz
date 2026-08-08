@@ -1,7 +1,14 @@
 import type { CutPlan } from '../../domain/cutplan';
 import type { Material, Part, Result, SolverConfig, Stock } from '../../domain/types';
 
-export type DisplayUnit = 'imperial-fraction' | 'imperial-decimal' | 'metric-mm' | 'metric-cm';
+/**
+ * Metric is millimetres only, deliberately. Sheet goods, cabinet plans and saw
+ * scales are all specified in mm, so a centimetre setting buys nothing and puts
+ * a third case in every formatter, table and exporter that fans out from here.
+ * `parseLength` still accepts a `cm` suffix on input, so a user who thinks in
+ * centimetres can type `60cm` and get 600mm whatever this is set to.
+ */
+export type DisplayUnit = 'imperial-fraction' | 'imperial-decimal' | 'metric-mm';
 
 export interface AppState {
   displayUnit: DisplayUnit;
