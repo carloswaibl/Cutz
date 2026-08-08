@@ -1,6 +1,21 @@
 @import "tailwindcss";
 @import "../export/print.css";
 
+/*
+ * Scan only the layers that can contain a class name.
+ *
+ * Tailwind v4 auto-detects sources across the project, and it extracts
+ * candidates from prose as readily as from JSX - the word "ring" in a comment
+ * in `import/svg/contours.ts` shipped a real `.ring` utility that nothing on
+ * the page used. `domain/`, `solver/`, `import/` and `export/` are barred from
+ * importing React at all, so none of them can name a class, and narrowing the
+ * scan here is what stops a parser's vocabulary reaching the stylesheet.
+ */
+@source not "../domain";
+@source not "../solver";
+@source not "../import";
+@source not "../export";
+
 :root {
   color-scheme: dark;
 }
