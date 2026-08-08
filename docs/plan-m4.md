@@ -113,17 +113,27 @@ export interface ImportedPart {
    */
   angle: number;
   /**
-   * False when the shape is below the tiny-shape threshold or otherwise
-   * suspect. The preview starts these unticked rather than dropping them.
+   * Advisory annotations, never tick state. Every row that reaches the preview
+   * is a part - see §4.3 - so nothing here decides whether a row is wanted.
    */
-  selected: boolean;
+  flags: PartFlag[];
   /** Element ids behind this row, for the preview's "3 shapes" affordance. */
   sourceIds: string[];
 }
 
+export type PartFlag =
+  | { kind: 'size-spread'; spreadMm: number }  // §5.6, from group.ts
+  | { kind: 'sheared' };                       // §5.2, the box is oversized
+
 export interface ImportWarning {
   kind: ImportWarningKind;
-  /** Occurrences folded into one entry. */
+  /**
+   * Occurrences folded into one entry, on `kind` *and* `message` together.
+   * `unsupported-element` covers every unsupported element there is, and the
+   * construct's name lives in the message - folding on the kind alone would
+   * report "8 unsupported elements" and lose the fact that three were text and
+   * five were images, which is the only part a user can act on.
+   */
   count: number;
   /** User-facing, names the construct and says what to do. Never generic. */
   message: string;
@@ -135,6 +145,10 @@ export type ImportOutcome =
 ```
 
 An `ImportError` is a file the app cannot proceed with at all. An `ImportWarning` is something it proceeded past and the user must be told about. Mixing the two is what produces importers that either throw on a stray `<text>` or silently drop half a drawing.
+
+**Amended in PR 1.** As first written, this section carried `selected: boolean` - "false when the shape is below the tiny-shape threshold, the preview starts these unticked rather than dropping them" - which contradicted §4.3's rule that sub-minimum-area contours are dropped with a counted warning. §4.3 won, so `selected` is gone: every row that reaches the preview is a part, and there is no second source of truth for whether one is wanted.
+
+`flags` replaces it, and it is not the same field renamed. It carries a *reason* rather than a verdict, which is what the preview needs in order to say anything useful, and it gives §5.6's size-spread flag and §5.2's shear flag somewhere to live - as originally specified, neither had a field at all, so two of this document's own requirements were unrepresentable in its own contract.
 
 ---
 
@@ -167,6 +181,10 @@ CLAUDE.md's rule is that a user always learns *which* construct was not supporte
 `clipPath` and `mask` get their own warning, and it matters more than the others: the geometry we take is the *unclipped* path, so the imported part can be larger than what the user sees on screen. The message says exactly that.
 
 `line` and any contour below the minimum area are dropped as degenerate. Construction lines and registration marks are the common case and a user does not want six warnings about them, so these fold into a single counted entry.
+
+**The threshold, set in PR 1.** A contour is degenerate when its narrow side is under **0.1mm** *or* its box area is under **1mm²** (`MIN_CONTOUR_EXTENT_MM` and `MIN_CONTOUR_AREA_MM2` in `import/geometry.ts`). Both tests are needed and neither is sufficient: a 200 x 0.05mm hairline is 10mm² and passes on area alone, and a 0.9 x 0.9mm dot passes on extent alone.
+
+Deliberately tiny, because this threshold *drops* geometry rather than flagging it. It must only ever catch things that could not be a part under any reading. A 20mm spacer is not a plausible part either, but that is the user's call to make in the preview and not this code's to make silently - which is why §3.2 no longer carries a "keep it, unticked" path. Degeneracy is also tested *before* openness: a construction line is both, and "your outline is open by 300mm, close the path and export again" is advice about a line nobody meant as a part.
 
 ### 4.4 Visibility
 
@@ -221,6 +239,8 @@ Two disjoint contours in a single `path` element are two parts. This is common i
 
 The resulting angle is snapped to 0 when it is within 0.5 degrees of axis-aligned, so a drawing that is square to the canvas to within float noise reports `0` rather than `0.03`. Dimensions themselves are never snapped or rounded - the display formatter is where rounding belongs, and rounding twice is how a 600mm part becomes 599.
 
+**The snap has to happen before the angle is folded into `[0, 90)`, not after** - established the hard way in PR 1. The same rectangle can be described four ways, one per edge taken as "width", so the raw edge angle gets folded into a quarter turn and the two extents follow it. An edge at 89.8 degrees is square to the canvas; fold first and it lands at 89.8 *inside* the range, where snapping it to 0 leaves the extents still describing the rotated orientation and a 600x200 part reports as 200x600. Snap in the full-turn domain and the quarter-turn swap is still available to follow the angle.
+
 ### 5.6 Grouping into quantities
 
 Shapes whose dimensions match within 0.5mm collapse into one part with a quantity. The group's reported size is the **maximum** in each axis, never the mean: a part that imports smaller than it was drawn is a part that does not fit, and a part that imports 0.3mm larger is a part that fits. Where the spread inside a group exceeds 0.2mm the row is flagged, since that usually means the drawing itself is inconsistent and the user should know before it becomes six shelves of slightly different length.
@@ -269,7 +289,7 @@ The dialog `import()`s the parser on open and prefetches it on mount, exactly as
 
 Four sequential PRs. Each independently mergeable and CI-green.
 
-### PR 1 - `feat/import-geometry` - pure geometry, no DOM
+### PR 1 - `feat/import-geometry` - pure geometry, no DOM - **shipped**
 
 - Add `svg-pathdata` (runtime), `jsdom` (dev). Report bundle impact even though nothing loads it yet.
 - `src/import/types.ts`, `src/import/errors.ts` - the contract from §3.2, with no SVG-specific field.
@@ -283,6 +303,18 @@ Four sequential PRs. Each independently mergeable and CI-green.
   - Shear detection: `skewX(20)` flagged, `scale(2,1)` not.
   - Flattening: a circle path flattens within tolerance of its true radius; tolerance is respected after a 10x matrix; output is identical across runs.
   - Contour nesting: donut yields one part and one hole; two disjoint contours yield two parts.
+
+**What shipped, and what changed on the way.** 80 tests, `dist/` byte-identical to `main` on all three asset hashes. Departures from the list above:
+
+- **`jsdom` deferred to PR 2.** Nothing in PR 1 touches the DOM, and PR 2 is where §8's "jsdom is not the browser" risk actually gets tested. Adding a devDependency one PR before its first use buys nothing.
+- **`selected` replaced by `flags`**, and the §4.3 threshold pinned to numbers. See the amendments in §3.2 and §4.3.
+- **`svg-pathdata` is 9.0.0, and it exports `SVGShapes`** - `createRect` with `rx`/`ry`, `createEllipse`, `createPolyline`, `createPolygon`. **PR 2's `shapes.ts` is therefore an attribute-reading adapter, not a conversion module.** Its `.matrix()` also means `transform.ts` never applies a matrix to path data itself; it only parses and composes, which is one fewer place for the multiplication order to be wrong.
+- **`normalizeHVZ()` must be called as `normalizeHVZ(false, ...)`.** The default rewrites `Z` as a line back to the subpath start. That draws the same picture and destroys the one bit §5.4 depends on - whether the author closed the shape deliberately, as against the ends happening to meet.
+- **`parseTransform` returns `null`, never identity**, on an attribute it cannot fully read, and `flattenPath` returns `null` on unreadable path data. Identity is the dangerous answer: the shape still imports, at a believable size, in the wrong place. A new `unparseable-path` warning kind covers the second case.
+- **Tailwind's source scan narrowed** in `src/ui/index.css`. It extracts class candidates from prose, so the word "ring" in a `contours.ts` doc comment was emitting a real `.ring` utility into the stylesheet every visitor downloads. The four layers barred from importing React cannot name a class, so they are excluded.
+- **`biome.json` now enforces §3.1's boundary** for `src/import/` - no React, no `ui/`, no `solver/` - and bars `domain/` and `solver/` from importing `import/` or `export/`. No `noRestrictedGlobals` on `import/`: `DOMParser` is this layer's one sanctioned browser dependency.
+
+Three bugs the tests caught, each a wrong-sized part rather than a crash: the quarter-turn fold in `minAreaBox` using `round` where it needed `floor`, which exchanged width and height for anything drawn between 45 and 90 degrees; snapping an 89.8-degree angle to zero without swapping the extents, which reported a 600x200 part as 200x600; and a straight diagonal line falling through to axis-aligned bounds and measuring as a 100x100 part. The first two are why §5.5's "snapped to 0 within 0.5 degrees" needs the snap to happen *before* the angle is folded into `[0, 90)` - afterwards the dimensions can no longer follow it.
 
 ### PR 2 - `feat/import-svg` - the importer
 
@@ -338,3 +370,6 @@ Four sequential PRs. Each independently mergeable and CI-green.
 5. **Bounding boxes, not outlines** - `project-plan.md` §9 question 2, resolved. Interior cutouts are reported and discarded.
 6. **Imported parts default to `free90`.** The file cannot know which face is visible, and defaulting to `locked` would silently cost sheets on parts where grain does not matter.
 7. **Import appends by default.** Replace is offered and states what it removes.
+8. **A shape too small to be a part is dropped, not carried into the preview unticked** - PR 1, resolving the contradiction between §4.3 and the original §3.2. The threshold is deliberately tiny, and named in §4.3.
+9. **`ImportedPart` carries `flags: PartFlag[]`, not `selected: boolean`** - PR 1. The importer emits data, not UI state; the preview decides what a flag looks like. This is also the field §5.2's shear and §5.6's size spread report through.
+10. **Parsing failures return `null` and are reported, never assumed away** - PR 1, for both `transform` attributes and path data. Identity and empty are the plausible-but-wrong answers here, and this milestone exists to avoid exactly those.
