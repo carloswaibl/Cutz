@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC edge case, not a capture: transforms composing down three levels. -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" width="200mm" height="200mm" viewBox="0 0 200 200">
+  <g transform="translate(20,30)">
+    <g transform="rotate(30)">
+      <g transform="translate(5,5)">
+        <rect id="tilted" width="100" height="50"/>
+      </g>
+    </g>
+  </g>
+</svg>

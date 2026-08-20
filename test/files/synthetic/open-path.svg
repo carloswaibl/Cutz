@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC edge case, not a capture: an outline left open by 4.2mm. -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" width="200mm" height="200mm" viewBox="0 0 200 200">
+  <path id="gappy" d="M 0 0 L 100 0 L 100 50 L 0 50 L 0 4.2"/>
+  <rect id="fine" x="0" y="60" width="100" height="50"/>
+</svg>

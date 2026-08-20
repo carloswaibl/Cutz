@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC edge case, not a capture: a clone that refers back to itself. -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" width="200mm" height="200mm" viewBox="0 0 200 200">
+  <g id="loop"><use href="#loop"/></g>
+  <use href="#nowhere"/>
+  <rect id="fine" width="100" height="50"/>
+</svg>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC edge case, not a capture: a switch renders one branch, not both. -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" width="200mm" height="200mm" viewBox="0 0 200 200">
+  <switch>
+    <rect id="chosen" systemLanguage="en" width="100" height="50"/>
+    <rect id="other" width="70" height="30"/>
+  </switch>
+</svg>
