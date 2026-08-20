@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC edge case, not a capture: outlines that were never converted to paths. -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" width="200mm" height="200mm" viewBox="0 0 200 200">
+  <text x="10" y="20">Shelf</text>
+  <text x="10" y="40">Side</text>
+  <image x="10" y="60" width="50" height="50" href="nope.png"/>
+</svg>

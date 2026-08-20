@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC edge case, not a capture: nothing to import and nothing to say about it. -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" width="200mm" height="200mm" viewBox="0 0 200 200">
+  <defs><rect id="unused" width="10" height="10"/></defs>
+</svg>

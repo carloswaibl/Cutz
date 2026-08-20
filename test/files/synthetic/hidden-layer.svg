@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC edge case, not a capture: a hidden Inkscape layer. -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" width="200mm" height="200mm" viewBox="0 0 200 200">
+  <g inkscape:groupmode="layer" inkscape:label="Parts">
+    <rect id="keep" x="10" y="10" width="100" height="50"/>
+  </g>
+  <g inkscape:groupmode="layer" inkscape:label="Construction" style="display:none">
+    <rect id="drop" x="10" y="80" width="60" height="40"/>
+  </g>
+  <g inkscape:groupmode="layer" inkscape:label="Also hidden" display="none">
+    <rect id="drop2" x="10" y="140" width="70" height="30"/>
+  </g>
+</svg>

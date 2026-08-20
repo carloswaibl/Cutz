@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!--
+  REPRODUCTION, NOT A CAPTURE.
+
+  Hand-written to reproduce the idioms Inkscape 1.x emits - the sodipodi and
+  inkscape namespaces, a namedview, an empty defs, `inkscape:groupmode="layer"`
+  groups, generated `rectNN` ids, and physical mm dimensions alongside a 1:1
+  viewBox. It is not a file Inkscape produced. See docs/plan-m4.md PR 2.
+
+  Drawing: a shelf unit, 1mm per user unit.
+    2 x side panel  800 x 300
+    3 x shelf       564 x 300
+    1 x back panel  600 x 800
+-->
+<svg
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.0.dtd"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   width="2000mm"
+   height="1200mm"
+   viewBox="0 0 2000 1200"
+   version="1.1"
+   id="svg1"
+   inkscape:version="1.3.2 (091e20e, 2023-11-25)"
+   sodipodi:docname="shelf-unit.svg">
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     inkscape:document-units="in"
+     inkscape:zoom="0.35"
+     inkscape:current-layer="layer1" />
+  <defs id="defs1" />
+  <metadata id="metadata1">
+    <rdf:RDF><cc:Work rdf:about=""><dc:title>shelf unit</dc:title></cc:Work></rdf:RDF>
+  </metadata>
+  <g
+     inkscape:label="Parts"
+     inkscape:groupmode="layer"
+     id="layer1">
+    <rect id="rect1" inkscape:label="Side Panel" x="10" y="10" width="800" height="300" style="fill:none;stroke:#000000;stroke-width:1" />
+    <rect id="rect2" inkscape:label="Side Panel" x="10" y="320" width="800" height="300" style="fill:none;stroke:#000000;stroke-width:1" />
+    <rect id="rect3" inkscape:label="Shelf" x="820" y="10" width="564" height="300" style="fill:none;stroke:#000000;stroke-width:1" />
+    <rect id="rect4" inkscape:label="Shelf" x="820" y="320" width="564" height="300" style="fill:none;stroke:#000000;stroke-width:1" />
+    <rect id="rect5" inkscape:label="Shelf" x="820" y="630" width="564" height="300" style="fill:none;stroke:#000000;stroke-width:1" />
+    <rect id="rect6" x="1400" y="10" width="600" height="800" style="fill:none;stroke:#000000;stroke-width:1"><title>Back Panel</title></rect>
+    <text xml:space="preserve" style="font-size:24px" x="10" y="1100" id="text1"><tspan sodipodi:role="line" id="tspan1">800 x 300</tspan></text>
+  </g>
+  <g
+     inkscape:label="Construction"
+     inkscape:groupmode="layer"
+     id="layer2"
+     style="display:none">
+    <rect id="rect7" x="10" y="1000" width="1980" height="40" />
+    <path id="path8" d="M 0,0 L 2000,1200" style="fill:none;stroke:#ff0000" />
+  </g>
+</svg>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC edge case, not a capture: a transform we refuse to guess at. -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" width="200mm" height="200mm" viewBox="0 0 200 200">
+  <g transform="translate(10,0) garbage(3)"><rect id="lost" width="100" height="50"/></g>
+  <rect id="fine" y="60" width="100" height="50"/>
+</svg>

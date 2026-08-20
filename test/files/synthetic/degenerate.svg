@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC edge case, not a capture: construction lines and registration marks. -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" width="200mm" height="200mm" viewBox="0 0 200 200">
+  <line id="guide1" x1="0" y1="0" x2="200" y2="0"/>
+  <line id="guide2" x1="0" y1="0" x2="0" y2="200"/>
+  <rect id="hairline" width="200" height="0.05"/>
+  <circle id="dot" cx="5" cy="5" r="0.4"/>
+  <rect id="real" y="60" width="100" height="50"/>
+</svg>

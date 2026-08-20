@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC edge case, not a capture: three Inkscape clones of one shelf. -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" width="200mm" height="200mm" viewBox="0 0 200 200">
+  <defs><rect id="shelf" width="80" height="25"/></defs>
+  <use href="#shelf" x="0" y="0" inkscape:label="Shelf A"/>
+  <use href="#shelf" x="0" y="30"/>
+  <use xlink:href="#shelf" xmlns:xlink="http://www.w3.org/1999/xlink" x="0" y="60"/>
+</svg>
