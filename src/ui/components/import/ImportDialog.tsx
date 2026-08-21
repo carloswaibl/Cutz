@@ -271,6 +271,42 @@ export function ImportDialog({
           </div>
         )}
 
+        {stage === 'idle' && (
+          <details className="bg-slate-950/40 border border-slate-800 rounded-lg overflow-hidden">
+            <summary className="cursor-pointer select-none px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-800/40 transition-colors">
+              What can I import?
+            </summary>
+            <div className="px-3 pb-3 flex flex-col gap-2 text-xs text-slate-400 leading-relaxed">
+              <p>
+                Shapes become parts as their{' '}
+                <strong className="text-slate-300">bounding box</strong> - the size a table saw
+                would need to cut them, not their true outline. A part drawn at an angle imports at
+                its real size, with the angle shown so you can check it.
+              </p>
+              <p>
+                <strong className="text-slate-300">Read:</strong> paths, rects (including rounded
+                corners), circles, ellipses, polygons and polylines, inside groups, layers,{' '}
+                <code className="text-slate-300">&lt;use&gt;</code> clones and nested{' '}
+                <code className="text-slate-300">&lt;switch&gt;</code>. Hidden layers and elements
+                are skipped, as they should be.
+              </p>
+              <p>
+                <strong className="text-slate-300">Skipped, and named in a warning:</strong> text,
+                images, and anything else that isn't a shape - convert them to paths first if
+                they're meant to be parts. Clipped or masked shapes are read at their full,
+                unclipped size. Interior cutouts (holes) are discarded, since a table saw cuts edge
+                to edge; drill or rout them after the sheet is cut.
+              </p>
+              <p>
+                <strong className="text-slate-300">Sizing:</strong> when the file states a physical
+                size it's used as-is; when it only gives pixels, 96px/inch is assumed and stated on
+                screen; when no scale can be found, you'll be asked for the drawing's width before
+                anything can be imported.
+              </p>
+            </div>
+          </details>
+        )}
+
         {stage === 'error' && (
           <div className="flex flex-col gap-3">
             <p className="text-sm text-red-300" role="alert">
