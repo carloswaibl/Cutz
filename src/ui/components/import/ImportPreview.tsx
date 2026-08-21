@@ -30,7 +30,7 @@ export function initialRows(outcome: Outcome): PreviewRow[] {
  * Rows grouped from a near-square or circular outline report an angle that is
  * an artefact of where the flattener placed vertices, not a real orientation -
  * see `docs/plan-m4.md` §7's PR 2 finding. `GROUP_TOLERANCE_MM` mirrors the
- * grouping tolerance in `import/svg/group.ts`: a shape whose box is square to
+ * grouping tolerance in `import/group.ts`: a shape whose box is square to
  * within that tolerance has no meaningful "wide side" to report an angle for.
  */
 const GROUP_TOLERANCE_MM = 0.5;

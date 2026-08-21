@@ -47,7 +47,8 @@ export type ImportErrorKind =
   | 'not-xml'
   | 'not-svg'
   | 'too-many-shapes'
-  | 'empty-drawing';
+  | 'empty-drawing'
+  | 'not-stl';
 
 /**
  * A returned value, not a thrown one - the same shape as `LengthParseError` in
@@ -102,6 +103,16 @@ export function emptyDrawing(): ImportError {
     message:
       'No shapes were found in this file. ' +
       'If the parts are on a hidden layer, unhide it and export again - hidden layers are skipped.',
+  };
+}
+
+export function notStl(): ImportError {
+  return {
+    kind: 'not-stl',
+    message:
+      'This file could not be read as STL, in either the binary or text form. ' +
+      'It may be truncated, or saved in a different format with an .stl extension - ' +
+      'try exporting it again as STL.',
   };
 }
 
@@ -232,6 +243,37 @@ export function unparseableTransform(attribute: string, count: number): ImportWa
       `${count} transform ${were(count, 'attribute')} not understood: "${attribute}". ` +
       `Everything drawn under ${count === 1 ? 'it' : 'them'} was skipped, rather than placed ` +
       'at a position that would have been wrong.',
+  };
+}
+
+export function nonManifoldMesh(descriptor: string, count: number): ImportWarning {
+  return {
+    kind: 'non-manifold-mesh',
+    count,
+    message:
+      `${count} mesh ${were(count, 'component')} not watertight - ${descriptor} - and ` +
+      `${was(count)} skipped, rather than boxed as a wrong-shaped part. This is usually a bad ` +
+      'boolean operation in the modelling tool; re-export after checking the mesh for errors there.',
+  };
+}
+
+export function notASlab(
+  reason: 'no-planar-faces' | 'unequal-faces' | 'unaccounted-geometry',
+  descriptor: string,
+): ImportWarning {
+  const why =
+    reason === 'no-planar-faces'
+      ? "no pair of large, flat, opposite-facing surfaces was found - it isn't a flat panel"
+      : reason === 'unequal-faces'
+        ? "its two largest opposite-facing surfaces aren't close enough in area to be a panel's top and bottom"
+        : "some of its surface isn't accounted for by a panel's top, bottom and edges";
+  return {
+    kind: 'not-a-slab',
+    count: 1,
+    message:
+      `A mesh component (${descriptor}) was skipped: ${why}. ` +
+      'A guillotine saw cuts flat panels, so a bracket, a box, or a body fused from more than ' +
+      'one shape does not become a wrong-shaped part.',
   };
 }
 

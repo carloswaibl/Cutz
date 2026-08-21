@@ -31,11 +31,11 @@ import {
   unparseableTransform,
   unsupportedElement,
 } from '../errors';
+import { groupRows, type ShapeRow } from '../group';
 import type { ImportOutcome, ImportWarning } from '../types';
 import { classifySubpath } from './contours';
 import { parseSvgDocument } from './document';
 import { flattenPath } from './flatten';
-import { groupRows, type ShapeRow } from './group';
 import { explicitLabel, labelFor } from './label';
 import { coord, isShapeElement, shapeToPathData } from './shapes';
 import { isSheared, type Matrix, multiply, parseTransform, translation } from './transform';
