@@ -21,7 +21,8 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-zoom-pan-pinch": "^4.0.4",
-    "svg-pathdata": "^9.0.0"
+    "svg-pathdata": "^9.0.0",
+    "three": "^0.185.1"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.6",
@@ -29,6 +30,7 @@
     "@types/node": "^26.1.2",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
+    "@types/three": "^0.185.4",
     "@vitejs/plugin-react": "^5.1.0",
     "jsdom": "^29.1.1",
     "tailwindcss": "^4.3.3",
