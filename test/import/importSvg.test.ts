@@ -62,6 +62,13 @@ describe('an Inkscape-shaped file', () => {
     expect(outcome.scale).toEqual({ kind: 'declared', unit: 'mm', mmPerUnit: 1 });
   });
 
+  it('reports the overall drawing size for the preview, in mm and in user units', () => {
+    expect(outcome.drawingWidthMm).toBeCloseTo(2000, 6);
+    expect(outcome.drawingHeightMm).toBeCloseTo(1200, 6);
+    expect(outcome.extentWidth).toBeCloseTo(2000, 6);
+    expect(outcome.extentHeight).toBeCloseTo(1200, 6);
+  });
+
   it('produces the three parts the drawing shows, at their drawn sizes', () => {
     // Checked against the drawing: 2 sides at 800x300, 3 shelves at 564x300,
     // 1 back at 600x800.
@@ -358,6 +365,10 @@ describe('the documented subset', () => {
     const outcome = synthetic('no-scale.svg');
     expect(outcome.scale).toEqual({ kind: 'none' });
     expect(outcome.parts).toHaveLength(1);
+    // drawingWidthMm is meaningless with no scale, but extentWidth survives -
+    // it is what the preview's override control divides an entered width by.
+    expect(outcome.drawingWidthMm).toBeNull();
+    expect(outcome.extentWidth).not.toBeNull();
   });
 
   it('folds unsupported elements by name, not into one useless total', () => {

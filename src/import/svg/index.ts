@@ -222,7 +222,16 @@ export function importSvg(text: string, options: SvgImportOptions = {}): ImportO
     return { ok: false, error: emptyDrawing() };
   }
 
-  return { ok: true, parts: grouped.parts, warnings, scale: viewport.scale };
+  return {
+    ok: true,
+    parts: grouped.parts,
+    warnings,
+    scale: viewport.scale,
+    drawingWidthMm: viewport.drawingWidthMm,
+    drawingHeightMm: viewport.drawingHeightMm,
+    extentWidth: viewport.extentWidth,
+    extentHeight: viewport.extentHeight,
+  };
 }
 
 // --- Geometry -------------------------------------------------------------

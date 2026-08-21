@@ -31,6 +31,15 @@ export interface Viewport {
    */
   drawingWidthMm: number | null;
   drawingHeightMm: number | null;
+  /**
+   * The same extent in raw user units, independent of whether a scale could
+   * be derived. `ImportOutcome` carries this through for the preview's scale
+   * control - see its doc comment for why `drawingWidthMm` alone isn't
+   * enough. Null only when the root gave neither a viewBox nor a
+   * width/height to measure.
+   */
+  extentWidth: number | null;
+  extentHeight: number | null;
   warnings: ImportWarning[];
 }
 
@@ -297,6 +306,8 @@ export function resolveViewport(root: Element, overrideMmPerUnit?: number): View
     scale,
     drawingWidthMm: known && extentX !== null ? extentX * matrix.a : null,
     drawingHeightMm: known && extentY !== null ? extentY * matrix.d : null,
+    extentWidth: extentX,
+    extentHeight: extentY,
     warnings,
   };
 }

@@ -25,7 +25,7 @@ function generateId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${idStr}`;
 }
 
-function cutListReducer(state: AppState, action: CutListAction): AppState {
+export function cutListReducer(state: AppState, action: CutListAction): AppState {
   switch (action.type) {
     case 'SET_UNIT':
       return { ...state, displayUnit: action.unit };
@@ -112,6 +112,13 @@ function cutListReducer(state: AppState, action: CutListAction): AppState {
       return {
         ...state,
         stock: state.stock.filter((s) => s.id !== action.id),
+      };
+
+    case 'IMPORT_PARTS':
+      return {
+        ...state,
+        parts: action.mode === 'replace' ? action.parts : [...state.parts, ...action.parts],
+        activeSheetIndex: 0,
       };
 
     case 'LOAD_PRESET':
@@ -249,6 +256,11 @@ export function useCutListState(): CutListStateReturn {
     dispatch({ type: 'CLEAR_PARTS' });
   }, []);
 
+  const importParts = useCallback((newParts: Omit<Part, 'id'>[], mode: 'append' | 'replace') => {
+    const withIds = newParts.map((p) => ({ ...p, id: generateId('part') }));
+    dispatch({ type: 'IMPORT_PARTS', parts: withIds, mode });
+  }, []);
+
   const addStock = useCallback((s: Omit<Stock, 'id'>): string => {
     const id = generateId('stock');
     dispatch({ type: 'ADD_STOCK', stock: { ...s, id } });
@@ -306,6 +318,7 @@ export function useCutListState(): CutListStateReturn {
     addStock,
     updateStock,
     deleteStock,
+    importParts,
     loadPreset,
     resetAll,
     reSolve,

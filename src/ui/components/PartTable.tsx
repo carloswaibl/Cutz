@@ -1,3 +1,4 @@
+import type { DragEvent } from 'react';
 import { useEffect, useState } from 'react';
 import type { Material, Part } from '../../domain/types';
 import { formatLength, parseLength, type Unit } from '../../domain/units';
@@ -16,6 +17,8 @@ interface PartTableProps {
   onDeletePart: (id: string) => void;
   onDuplicatePart: (id: string) => void;
   onClearParts: () => void;
+  onOpenImport: () => void;
+  onImportFile: (file: File) => void;
 }
 
 interface PartRowProps {
@@ -237,8 +240,11 @@ export function PartTable({
   onDeletePart,
   onDuplicatePart,
   onClearParts,
+  onOpenImport,
+  onImportFile,
 }: PartTableProps) {
   const defaultUnit: Unit = displayUnit.startsWith('imperial') ? 'in' : 'mm';
+  const [isDragOver, setIsDragOver] = useState(false);
 
   const filteredParts =
     selectedMaterialId === 'all' ? parts : parts.filter((p) => p.materialId === selectedMaterialId);
@@ -279,6 +285,14 @@ export function PartTable({
 
           <button
             type="button"
+            onClick={onOpenImport}
+            className="px-2.5 py-1 text-xs text-slate-300 hover:text-amber-300 transition hover:bg-slate-800 rounded border border-slate-800"
+          >
+            Import
+          </button>
+
+          <button
+            type="button"
             onClick={handleAddDefaultPart}
             className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-slate-950 font-semibold text-xs rounded-lg transition shadow-sm"
           >
@@ -287,7 +301,23 @@ export function PartTable({
         </div>
       </div>
 
-      <div className="overflow-x-auto">
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: drag-and-drop file target, no semantic interactive role applies to a native HTML5 drop zone */}
+      <div
+        onDragOver={(e: DragEvent<HTMLDivElement>) => {
+          e.preventDefault();
+          setIsDragOver(true);
+        }}
+        onDragLeave={() => setIsDragOver(false)}
+        onDrop={(e: DragEvent<HTMLDivElement>) => {
+          e.preventDefault();
+          setIsDragOver(false);
+          const file = e.dataTransfer.files[0];
+          if (file) onImportFile(file);
+        }}
+        className={`overflow-x-auto rounded-lg transition-colors ${
+          isDragOver ? 'ring-2 ring-amber-500/60 bg-amber-500/5' : ''
+        }`}
+      >
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="border-b border-slate-800 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
