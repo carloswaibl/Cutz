@@ -124,7 +124,11 @@ export type ImportWarningKind =
   /** A `transform` attribute we could not parse. The subtree is skipped, never assumed identity. */
   | 'unparseable-transform'
   /** A `use` chain too deep, or one that refers back to itself. */
-  | 'use-not-resolved';
+  | 'use-not-resolved'
+  /** A mesh component with an open or duplicated edge - not watertight. Not a part. */
+  | 'non-manifold-mesh'
+  /** A watertight mesh component that isn't a flat panel - a bracket, a box, a fused body. */
+  | 'not-a-slab';
 
 export interface ImportWarning {
   kind: ImportWarningKind;

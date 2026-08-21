@@ -6,7 +6,7 @@ import {
   groupRows,
   type ShapeRow,
   SPREAD_FLAG_MM,
-} from '../../src/import/svg/group';
+} from '../../src/import/group';
 
 let counter = 0;
 function row(width: number, height: number, label = 'Shelf', sheared = false): ShapeRow {

@@ -5,12 +5,17 @@
  * table wants one row saying six. Getting this wrong in either direction is
  * expensive: six rows is a table nobody wants to edit, and one row of six when
  * they were not actually the same size is a shelf that does not fit.
+ *
+ * Shared between both importers - originally SVG-only, moved here for M5
+ * because grouping applies identically to a slab's projected boxes across a
+ * multi-file STL drop (`docs/plan-m5.md` §4.9). Nothing below is specific to
+ * either source format.
  */
 
-import { EPSILON } from '../../domain/geometry';
-import { sizeSpread } from '../errors';
-import type { OrientedBox } from '../geometry';
-import type { ImportedPart, ImportWarning, PartFlag } from '../types';
+import { EPSILON } from '../domain/geometry';
+import { sizeSpread } from './errors';
+import type { OrientedBox } from './geometry';
+import type { ImportedPart, ImportWarning, PartFlag } from './types';
 
 /**
  * How far two shapes may disagree and still be the same part.
