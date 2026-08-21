@@ -92,6 +92,8 @@ describe('resolveViewport', () => {
     expect(viewport.scale).toEqual({ kind: 'declared', unit: 'mm', mmPerUnit: 1 });
     expect(viewport.drawingWidthMm).toBeCloseTo(210, 10);
     expect(viewport.drawingHeightMm).toBeCloseTo(297, 10);
+    expect(viewport.extentWidth).toBeCloseTo(210, 10);
+    expect(viewport.extentHeight).toBeCloseTo(297, 10);
   });
 
   it('scales up when the viewBox is smaller than the declared size', () => {
@@ -142,6 +144,31 @@ describe('resolveViewport', () => {
     expect(viewport.scale).toEqual({ kind: 'none' });
     expect(viewport.drawingWidthMm).toBeNull();
     expect(viewport.drawingHeightMm).toBeNull();
+  });
+
+  describe('extentWidth / extentHeight', () => {
+    it('is the viewBox extent even when no scale could be derived, as long as a viewBox exists', () => {
+      // The preview's override control needs this to compute a scale from
+      // scratch: mmPerUnitOverride = enteredWidthMm / extentWidth. A viewBox
+      // with no usable dimensions still has an extent, even though nothing
+      // about it is a physical size yet.
+      const viewport = resolveViewport(root('viewBox="0 0 10 10"'));
+      expect(viewport.scale).toEqual({ kind: 'none' });
+      expect(viewport.extentWidth).toBe(10);
+      expect(viewport.extentHeight).toBe(10);
+    });
+
+    it('is null when the root gives neither a viewBox nor a width/height to measure', () => {
+      const viewport = resolveViewport(root(''));
+      expect(viewport.extentWidth).toBeNull();
+      expect(viewport.extentHeight).toBeNull();
+    });
+
+    it('is the declared width in user units, not millimetres, when a scale is known', () => {
+      const viewport = resolveViewport(root('width="8in" height="4in"'));
+      expect(viewport.extentWidth).toBeCloseTo(8, 10);
+      expect(viewport.extentHeight).toBeCloseTo(4, 10);
+    });
   });
 
   it('keeps the viewBox origin shift even when the scale is unknown', () => {

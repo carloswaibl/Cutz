@@ -1,9 +1,10 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { CutPlan } from '../domain/cutplan';
 import { parseStockInstanceId } from '../domain/instances';
 import type { Layout, Material, Stock } from '../domain/types';
 import { ConfigBar } from './components/ConfigBar';
 import { Header } from './components/Header';
+import { ImportDialog } from './components/import/ImportDialog';
 import { LayoutViewer } from './components/LayoutViewer';
 import { MaterialManager } from './components/MaterialManager';
 import { PartTable } from './components/PartTable';
@@ -31,6 +32,11 @@ function resolveLayout(
 export function App() {
   const state = useCutListState();
   const fracDenom = fractionDenominatorFromUnit(state.displayUnit);
+
+  // Transient UI state: nothing here is worth undoing or persisting, so it
+  // lives outside the reducer, same reasoning as `LayoutViewer`'s exportError.
+  const [importOpen, setImportOpen] = useState(false);
+  const [droppedImportFile, setDroppedImportFile] = useState<File | null>(null);
 
   /** Layouts with their resolved stock and material, for rendering. */
   const resolvedLayouts = useMemo(() => {
@@ -127,6 +133,11 @@ export function App() {
                 onDeletePart={state.deletePart}
                 onDuplicatePart={state.duplicatePart}
                 onClearParts={state.clearParts}
+                onOpenImport={() => setImportOpen(true)}
+                onImportFile={(file) => {
+                  setDroppedImportFile(file);
+                  setImportOpen(true);
+                }}
               />
             </div>
 
@@ -183,6 +194,19 @@ export function App() {
           </div>
         </main>
       </div>
+
+      <ImportDialog
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        droppedFile={droppedImportFile}
+        onDroppedFileConsumed={() => setDroppedImportFile(null)}
+        materials={state.materials}
+        selectedMaterialId={state.selectedMaterialId}
+        displayUnit={state.displayUnit}
+        fractionDenominator={fracDenom}
+        existingPartCount={state.parts.length}
+        onCommit={state.importParts}
+      />
 
       {/* Hidden on screen, and the only thing that prints. See export/print.css. */}
       {state.result && (

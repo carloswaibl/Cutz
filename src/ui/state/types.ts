@@ -51,6 +51,7 @@ export type CutListAction =
   | { type: 'ADD_STOCK'; stock: Stock }
   | { type: 'UPDATE_STOCK'; id: string; stock: Partial<Stock> }
   | { type: 'DELETE_STOCK'; id: string }
+  | { type: 'IMPORT_PARTS'; parts: Part[]; mode: 'append' | 'replace' }
   | {
       type: 'LOAD_PRESET';
       preset: {
@@ -90,6 +91,7 @@ export interface CutListStateReturn extends AppState {
   addStock: (stock: Omit<Stock, 'id'>) => string;
   updateStock: (id: string, stock: Partial<Stock>) => void;
   deleteStock: (id: string) => void;
+  importParts: (parts: Omit<Part, 'id'>[], mode: 'append' | 'replace') => void;
   loadPreset: (presetKey: string) => void;
   resetAll: () => void;
   reSolve: () => void;

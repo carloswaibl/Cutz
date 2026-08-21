@@ -151,5 +151,29 @@ export interface ImportWarning {
  * half a drawing.
  */
 export type ImportOutcome =
-  | { ok: true; parts: ImportedPart[]; warnings: ImportWarning[]; scale: ScaleSource }
+  | {
+      ok: true;
+      parts: ImportedPart[];
+      warnings: ImportWarning[];
+      scale: ScaleSource;
+      /**
+       * The drawing's overall size in millimetres, for the preview's "drawing
+       * is ___ wide" control. Null exactly when `scale.kind` is `'none'` -
+       * the numbers would be meaningless, there being nothing yet to be off
+       * by a factor of.
+       */
+      drawingWidthMm: number | null;
+      drawingHeightMm: number | null;
+      /**
+       * The same extent in raw user units, independent of whether a scale
+       * could be derived. This is what a scale override divides into:
+       * `mmPerUnitOverride = enteredWidthMm / extentWidth`. It is what lets
+       * the preview compute a scale from scratch when `scale.kind` is
+       * `'none'`, where `drawingWidthMm` has nothing to base a ratio on.
+       * Null only when the root gave neither a viewBox nor a width/height to
+       * measure at all.
+       */
+      extentWidth: number | null;
+      extentHeight: number | null;
+    }
   | { ok: false; error: ImportError };
