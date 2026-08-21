@@ -14,6 +14,7 @@
  * "1 <text> element was skipped".
  */
 
+import { type Contour, nestContours } from '../contours';
 import {
   clippedGeometry,
   cloneNotResolved,
@@ -31,7 +32,7 @@ import {
   unsupportedElement,
 } from '../errors';
 import type { ImportOutcome, ImportWarning } from '../types';
-import { type Contour, classifySubpath, nestContours } from './contours';
+import { classifySubpath } from './contours';
 import { parseSvgDocument } from './document';
 import { flattenPath } from './flatten';
 import { groupRows, type ShapeRow } from './group';
