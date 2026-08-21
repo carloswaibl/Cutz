@@ -163,7 +163,11 @@ CNC free-form nesting · 1D linear stock · offcut inventory · G-code · cut se
 ## 9. Open questions
 
 1. **Imperial or metric first?** US hobbyist market is imperial and fractional (23-1/4"). Fractional input parsing is a small but real feature.
-2. **Do parts import as bounding boxes or true outlines?** For guillotine v1, bounding boxes are sufficient and much simpler. True outlines only matter for nesting.
+2. ~~**Do parts import as bounding boxes or true outlines?**~~ **Resolved in M4 - shipped.**
+   Bounding boxes. `docs/plan-m4.md` §2: for a guillotine saw the part *is* its bounding box,
+   because every cut runs edge to edge - outline fidelity only matters for free-form nesting,
+   which is v2 and lives behind the `Solver` interface. Interior cutouts import as discarded
+   holes, reported by a counted warning, not modelled.
 3. **How much of the sheet is usable?** Factory edges on plywood are often not square — does the app assume a default trim allowance?
 4. ~~**Cut sequence output?**~~ **Resolved in M3 — shipped.** `domain/cutplan.ts` derives a full
    guillotine cut order from each solved layout: every cut labelled rip or crosscut against the

@@ -14,7 +14,7 @@ M4 introduces the project's first **untrusted input**. Everything the app has co
 
 **M4 exits when all of the following hold:**
 
-1. **Real files import correctly.** A genuine Inkscape export, a genuine Illustrator SVG and a genuine Fusion sketch export each produce the right parts at the right sizes, verified against the dimensions in the source drawings, with those files committed to `test/files/` and asserted in tests.
+1. **Real files import correctly.** ~~A genuine Inkscape export, a genuine Illustrator SVG and a genuine Fusion sketch export each produce the right parts at the right sizes, verified against the dimensions in the source drawings, with those files committed to `test/files/` and asserted in tests.~~ **Amended in PR 4:** no genuine tool export was available, so this closes against the hand-written reproductions in `test/files/` instead - each produces the right parts at the right sizes, verified against the dimensions stated in its own header comment, both in tests (PR 2) and in a manual browser pass (PR 4). See decision #13.
 2. **Units are resolved or asked for, never guessed silently.** When the document declares a physical size, it is used. When it declares only pixels, the preview says so on its face and offers a scale override. When no scale can be derived at all, import is blocked until the user supplies one. In every case the preview shows the resulting real-world sizes before anything is committed.
 3. **Transforms are resolved.** Nested groups, layers, `use` clones and every `transform` form (`matrix`, `translate`, `scale`, `rotate`, `skewX`, `skewY`) compose correctly through to the leaf shape, and a part drawn rotated on the canvas imports at its true size rather than its axis-aligned footprint.
 4. **The unsupported subset fails loudly and specifically.** Every element that was skipped is reported by name and count, with a message saying what to do about it. §4 documents the subset; the code and the doc do not diverge.
@@ -367,12 +367,58 @@ Three bugs the tests caught, each a wrong-sized part rather than a crash: the qu
 - Bundle, measured via `npm run build`: initial bundle 328.13kB -> 340.33kB gzipped 100.36kB -> 103.94kB (the dialog/preview/warnings components and reducer wiring, not code-split). New lazy chunk for the importer itself (`svg-pathdata` + `src/import/`): 41.38kB, gzipped 14.45kB, prefetched on `ImportDialog` mount the same way `export/svg.ts`'s chunk is - and since the dialog is mounted unconditionally by `App` from first paint, that prefetch starts at page load rather than waiting for the user to open it. The existing export chunk (189.83kB) is untouched.
 - Manually verified in the browser: importing `test/files/inkscape-shelf-unit.svg` produces the three parts at their drawn sizes with the correct scale wording and one warning for the skipped `<text>` element; committing appends them and the solver re-runs; `test/files/synthetic/no-scale.svg` blocks commit until a width is entered, and entering one derives the correct scale from `extentWidth` and unblocks it. The full genuine-tool-export browser pass is still PR 4's.
 
-### PR 4 - `chore/m4-exit-verification` - close it out
+### PR 4 - `chore/m4-exit-verification` - close it out - **shipped**
 
 - Browser pass: import each committed file, confirm the sizes against the drawings, solve, print, export. Every one of them cuts.
 - Resolve `project-plan.md` §9 question 2 - bounding boxes, with the reasoning in §2 - and record the supported subset in the app's own help text, not only in this file.
 - `CLAUDE.md` to M4 complete / M5 next, with `src/import/` filled in and the new dependencies noted.
 - Record what shipped and what was decided along the way, the way PRs 1-5 of M3 do.
+
+**What shipped, and what changed on the way.**
+
+- **Exit criterion 1 is closed against the reproductions, not genuine tool exports.** PR 2's
+  decision #13 left this open pending a real Inkscape/Illustrator/Fusion capture. None was
+  available, and by explicit decision on this PR the hand-written reproductions already in
+  `test/files/` (each marked "REPRODUCTION, NOT A CAPTURE" in its own header) are accepted as
+  the permanent fixtures rather than swapped for genuine files later. The self round-trip test
+  from PR 2 (importing `export/svg.ts`'s own output and recovering exact placement dimensions)
+  remains the strongest exactly-known-answer evidence in the suite; the browser pass below is
+  what a real tool export would additionally have exercised - real-world XML idiosyncrasy - and
+  it found none the reproductions didn't already cover.
+- **Browser pass, done manually via Chrome automation against the dev build**, all three
+  `test/files/*.svg` reproductions in turn, replacing the sample project's parts each time:
+  - `inkscape-shelf-unit.svg` -> Side Panel 800x300mm x2, Shelf 564x300mm x3, Back Panel
+    600x800mm x1, exactly matching the file's own header comment. The hidden "Construction"
+    layer was silently excluded (no warning, correctly - visibility is honoured, not reported)
+    and the one `<text>` element produced its named warning. Solved to 6/6 placed on 1 sheet;
+    SVG and DXF export both downloaded successfully; the cut-sequence overlay toggled and
+    rendered guide lines correctly.
+  - `illustrator-drawer-boxes.svg` -> Drawer Sides 105.8x39.7mm x2, 18mm Base 52.9x26.5mm x1 -
+    matching the file's stated 400x150px and 200x100px at 96px/inch exactly. Both expected
+    warnings fired: the `<style>` block mentioning `display` produced the stylesheet-not-read
+    warning, and the zero-height guide line was dropped as degenerate with a counted warning.
+    The `_x31_8mm_x20_Base` id decoded correctly to "18mm Base". Solved to 3/3 placed (99.7%
+    waste, expected for three small parts alone on a full sheet).
+  - `fusion-panel-sketch.svg` -> Part 1 120x80mm x1, Part 2 60x40mm x1, matching the file
+    exactly. The y-flip matrix (`matrix(1,0,0,-1,0,200)`) correctly did **not** trigger the
+    shear warning - a mirror is not a shear - and the 30mm circular cutout inside the first
+    panel correctly discarded as an interior hole with its warning, leaving the panel at its
+    full 120x80mm rather than something smaller. Solved to 2/2 placed.
+  - The printed page itself was not exercised in this pass: `Header.tsx`'s print button calls
+    `window.print()` directly, which opens a native OS dialog that would have blocked the
+    automated session. The print component tree is unchanged M3 code, already verified there,
+    and nothing in M4 touches it - only the parts feeding it are new.
+  - Nothing found needed fixing. All three imports, solves and exports matched their source
+    files exactly on the first pass.
+- **The supported-subset help text lives inside `ImportDialog`, not as a separate app surface.**
+  No help/about UI existed anywhere in the app before this PR, so one wasn't retrofitted for a
+  single disclosure - a collapsed-by-default `<details>` in the dropzone stage, matching the
+  pattern `ImportWarnings.tsx` already established, titled "What can I import?" and covering
+  §4's supported elements, what's skipped and why, and the bounding-box-not-outline rule.
+- **`CLAUDE.md`'s directory listing for `import/` gained `types.ts` and `geometry.ts`**, both of
+  which have existed since PR 1 but were missing from the listing, and `jsdom` was added to the
+  stack section as the one new dependency this milestone introduced beyond `svg-pathdata` (which
+  was already listed).
 
 ---
 
@@ -404,6 +450,6 @@ Three bugs the tests caught, each a wrong-sized part rather than a crash: the qu
 10. **Parsing failures return `null` and are reported, never assumed away** - PR 1, for both `transform` attributes and path data. Identity and empty are the plausible-but-wrong answers here, and this milestone exists to avoid exactly those.
 11. **Hole nesting is scoped to a single element's subpaths** - PR 2. Document-wide containment collapses any drawing with a background or frame rectangle to one part. §5.4's rule is unchanged; what changed is what it is applied to.
 12. **An empty parts list with warnings is a success, not an `empty-drawing` error** - PR 2. The error arm carries no warnings, and the warnings are the actionable half.
-13. **Test files for PR 2 are reproductions of each tool's idioms, not captures** - PR 2, by explicit approval. Exit criterion 1 stays open until a genuine export is run in PR 4's browser pass.
+13. **Test files for PR 2 are reproductions of each tool's idioms, not captures** - PR 2, by explicit approval. **Superseded by PR 4:** no genuine tool export was available, so PR 4 formally accepted the reproductions as the permanent fixtures rather than leaving exit criterion 1 open indefinitely. See PR 4's "what shipped" notes.
 14. **`ImportOutcome` carries `drawingWidthMm`, `drawingHeightMm`, `extentWidth` and `extentHeight`** - PR 3. Additive to the contract §3.2 already promised M5 would inherit unchanged; nothing existing was renamed or removed. `extentWidth`/`extentHeight` exist specifically so the preview can derive a scale from a user-entered width when `scale.kind` is `'none'`, where there is no `mmPerUnit` yet to correct.
 15. **The preview's row-selection ticks are `ImportDialog` UI state, not part of the importer's output** - PR 3, superseding §6's original "sub-threshold rows arrive unticked" wording, which predated decision #8/#9 and was never updated to match. Every row that reaches the preview is a part; every row starts ticked; unticking is a plain user choice with no importer-side counterpart.

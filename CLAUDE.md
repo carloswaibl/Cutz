@@ -28,6 +28,7 @@ These were decided deliberately. **Do not violate them without explicit approval
 - **idb** — IndexedDB wrapper
 - **dxf-writer** — DXF export
 - **Vitest** — unit tests
+- **jsdom** - dev dependency; DOM environment for import tests that exercise `DOMParser`
 - Layouts render as **native SVG from React components**, not canvas. This gives SVG export for free and makes print styling straightforward.
 
 ---
@@ -79,9 +80,12 @@ src/
     rng.ts         # seeded PRNG (mulberry32)
     objective.ts   # candidate layout scoring
   import/
-    svg/           # SVG -> Part[]
-    stl/           # STL -> Part
-    errors.ts      # typed import errors with user-facing messages
+    types.ts       # ImportedPart, ImportWarning, ImportOutcome - shared contract, SVG and STL
+    errors.ts      # typed import errors and warnings with user-facing messages
+    geometry.ts    # hull, min-area box, signed area, point-in-polygon - shared, SVG and STL
+    svg/           # SVG -> Part[]: document, viewport/units, transforms, shapes, flatten,
+                    # contours, label, group
+    stl/           # STL -> Part (M5)
   export/          # may depend on src/ui/ renderers; domain/ and solver/ may not
     svg.ts         # standalone SVG via renderToStaticMarkup - lazily loaded, pulls react-dom/server
     dxf.ts         # hand-rolled R12 writer, headless, statically imported
@@ -93,6 +97,7 @@ src/
     state/         # reducer, app state, presets
     components/
       print/       # print-only component tree, hidden on screen
+      import/      # SVG import dialog, preview, and warnings panel
   storage/         # IndexedDB project persistence
 test/
   fixtures/        # realistic projects: bookshelf, cabinet carcass, drawer boxes
@@ -264,11 +269,15 @@ Things that have been decided against, or are easy to get wrong:
 
 ## Current status
 
-Milestone 3 (Export) is complete. On top of M2's part/stock entry, unit conversion, live solving
-and cut diagrams, the app now derives a guillotine cut plan per sheet, prints cut sheets with a
-numbered cut sequence, and exports each sheet as SVG and DXF R12.
+Milestone 4 (SVG import) is complete. On top of M3's cut plan, print and export, a woodworker
+can now drop an Inkscape, Illustrator, or Fusion SVG onto the parts table and get parts: the
+importer resolves units, flattens curves, composes transforms, groups identical shapes into
+quantities, and reports every unsupported construct by name rather than dropping it silently.
+Everything above the preview screen is pure and headless (`src/import/`, tested under Node and
+jsdom); the dialog, preview and commit flow live in `src/ui/components/import/` and load in
+their own lazily-fetched chunk, prefetched on mount the same way `export/svg.ts` is.
 
-Two conventions from M3 that are easy to break:
+Conventions from M3 and M4 that are easy to break:
 
 - **Display units are `imperial-fraction | imperial-decimal | metric-mm`.** Metric is millimetres
   only. `parseLength` still accepts a `cm` suffix on *input*; there is no cm display mode, and
@@ -276,6 +285,19 @@ Two conventions from M3 that are easy to break:
   scales its geometry in one unit and prints its labels in another.
 - **`AppState.showCutSequence` drives four destinations at once** - the screen diagram, the printed
   pages, the SVG export and the DXF export. Read it; do not re-derive an equivalent per call site.
+- **Imported parts are always bounding boxes, never true outlines.** Interior cutouts are
+  discarded with a counted warning, not modelled - `docs/project-plan.md` §9 and `docs/plan-m4.md`
+  §2 record why. Do not start representing true outlines without revisiting both.
+- **Hole nesting in the SVG importer is scoped to one element's own subpaths, not the whole
+  document.** Document-wide containment reads any background or frame rectangle as a panel with
+  the entire drawing cut out of it. `docs/plan-m4.md` decision #11 has the reasoning.
+- **`ImportedPart` carries `flags: PartFlag[]`, never a `selected: boolean`.** The importer
+  reports *why* a row looks the way it does; whether a row is wanted is `ImportDialog`'s own UI
+  state, not part of the importer's output. `docs/plan-m4.md` decisions #9 and #15.
+- **`test/files/*.svg` (the non-synthetic ones) are hand-written reproductions of Inkscape,
+  Illustrator and Fusion export idioms, not genuine captures from those tools** - each file says
+  so in its own header comment. This was an explicit, approved substitution; see `docs/plan-m4.md`
+  decision #13.
 
-The next active milestone is **M4 (SVG import)**. See `docs/project-plan.md` for details. Ask
+The next active milestone is **M5 (STL import)**. See `docs/project-plan.md` for details. Ask
 before starting substantial work.
