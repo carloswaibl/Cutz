@@ -18,7 +18,7 @@ interface PartTableProps {
   onDuplicatePart: (id: string) => void;
   onClearParts: () => void;
   onOpenImport: () => void;
-  onImportFile: (file: File) => void;
+  onImportFiles: (files: File[]) => void;
 }
 
 interface PartRowProps {
@@ -241,7 +241,7 @@ export function PartTable({
   onDuplicatePart,
   onClearParts,
   onOpenImport,
-  onImportFile,
+  onImportFiles,
 }: PartTableProps) {
   const defaultUnit: Unit = displayUnit.startsWith('imperial') ? 'in' : 'mm';
   const [isDragOver, setIsDragOver] = useState(false);
@@ -311,8 +311,7 @@ export function PartTable({
         onDrop={(e: DragEvent<HTMLDivElement>) => {
           e.preventDefault();
           setIsDragOver(false);
-          const file = e.dataTransfer.files[0];
-          if (file) onImportFile(file);
+          if (e.dataTransfer.files.length > 0) onImportFiles(Array.from(e.dataTransfer.files));
         }}
         className={`overflow-x-auto rounded-lg transition-colors ${
           isDragOver ? 'ring-2 ring-amber-500/60 bg-amber-500/5' : ''

@@ -3,6 +3,7 @@ import type { ImportedPart, ImportOutcome, ScaleSource } from '../../../import/t
 import { formatDisplayLength, toFormatUnit } from '../../format';
 import type { DisplayUnit } from '../../state/types';
 import { ImportWarnings } from './ImportWarnings';
+import { suggestMaterialId } from './materialSuggestion';
 
 type Outcome = Extract<ImportOutcome, { ok: true }>;
 
@@ -12,18 +13,77 @@ export interface PreviewRow {
   label: string;
   qty: number;
   selected: boolean;
+  materialId: string;
 }
 
-export function initialRows(outcome: Outcome): PreviewRow[] {
-  return outcome.parts.map((part) => ({
-    part,
-    label: part.label,
-    qty: part.qty,
-    // Every row that reaches the preview is a part - `flags` are advisory,
-    // never a second source of truth on wantedness (docs/plan-m4.md §9 #8/#9).
-    // Selection is plain local UI state, ticked by default.
-    selected: true,
-  }));
+/**
+ * One dropped/picked file's own state, from "still reading" through "parsed
+ * and ready to review" or "could not be used at all." A file that failed to
+ * parse still gets its own entry here rather than aborting the whole drop -
+ * `docs/plan-m5.md` §5's "each file is parsed independently" applies to
+ * failure as much as success.
+ */
+export type PreviewFileState =
+  | { status: 'reading' }
+  | { status: 'error'; message: string }
+  | {
+      status: 'ready';
+      kind: 'svg' | 'stl';
+      outcome: Outcome;
+      /** STL only - `null` for an SVG file, which has no thickness to report. */
+      thicknessMm: Record<string, number> | null;
+      rows: PreviewRow[];
+      overrideText: string;
+      overrideError: string | null;
+    };
+
+export interface PreviewFile {
+  id: string;
+  filename: string;
+  state: PreviewFileState;
+}
+
+/**
+ * A row's thickness, averaged across the `sourceId`s that fed into it -
+ * grouping collapses several accepted components into one row when their
+ * dimensions match, and they were the same physical panel, so they should
+ * report (very nearly) the same thickness. `null` for an SVG row, which has
+ * no `thicknessMm` map to look itself up in at all.
+ */
+function thicknessForRow(
+  row: PreviewRow,
+  thicknessMm: Record<string, number> | null,
+): number | null {
+  if (!thicknessMm) return null;
+  const values = row.part.sourceIds
+    .map((id) => thicknessMm[id])
+    .filter((v): v is number => v !== undefined);
+  if (values.length === 0) return null;
+  return values.reduce((sum, v) => sum + v, 0) / values.length;
+}
+
+export function initialRows(
+  outcome: Outcome,
+  materials: readonly Material[],
+  selectedMaterialId: string | 'all',
+  thicknessMm: Record<string, number> | null,
+): PreviewRow[] {
+  const fallbackId = selectedMaterialId !== 'all' ? selectedMaterialId : (materials[0]?.id ?? '');
+  return outcome.parts.map((part) => {
+    const thickness = thicknessMm
+      ? (part.sourceIds.map((id) => thicknessMm[id]).find((v) => v !== undefined) ?? null)
+      : null;
+    return {
+      part,
+      label: part.label,
+      qty: part.qty,
+      // Every row that reaches the preview is a part - `flags` are advisory,
+      // never a second source of truth on wantedness (docs/plan-m4.md §9 #8/#9).
+      // Selection is plain local UI state, ticked by default.
+      selected: true,
+      materialId: suggestMaterialId(thickness, materials, fallbackId),
+    };
+  });
 }
 
 /**
@@ -36,7 +96,7 @@ export function initialRows(outcome: Outcome): PreviewRow[] {
 const GROUP_TOLERANCE_MM = 0.5;
 
 function angleText(part: ImportedPart): string {
-  if (Math.abs(part.width - part.height) <= GROUP_TOLERANCE_MM) return '—';
+  if (Math.abs(part.width - part.height) <= GROUP_TOLERANCE_MM) return '-';
   return `${part.angle.toFixed(1)}°`;
 }
 
@@ -67,76 +127,71 @@ function scaleWords(
     case 'user':
       return `Using the width you entered:${wide}.`;
     case 'none':
-      return "No scale could be detected in this file. Enter the drawing's width below to continue.";
+      return 'No scale could be detected in this file. Enter its width below to continue.';
   }
 }
 
-interface ImportPreviewProps {
-  outcome: Outcome;
-  rows: PreviewRow[];
+interface FileRowsProps {
+  file: PreviewFile;
   onRowChange: (
+    fileId: string,
     index: number,
-    patch: Partial<Pick<PreviewRow, 'label' | 'qty' | 'selected'>>,
+    patch: Partial<Pick<PreviewRow, 'label' | 'qty' | 'selected' | 'materialId'>>,
   ) => void;
   materials: Material[];
-  materialId: string;
-  onMaterialChange: (id: string) => void;
-  rotationPolicy: RotationPolicy;
-  onRotationPolicyChange: (policy: RotationPolicy) => void;
-  mode: 'append' | 'replace';
-  onModeChange: (mode: 'append' | 'replace') => void;
-  existingPartCount: number;
   displayUnit: DisplayUnit;
   fractionDenominator: number;
-  overrideText: string;
-  onOverrideChange: (text: string) => void;
-  onOverrideBlur: () => void;
-  overrideError: string | null;
-  onCommit: () => void;
+  onOverrideChange: (fileId: string, text: string) => void;
+  onOverrideBlur: (fileId: string) => void;
+  showFilename: boolean;
 }
 
-export function ImportPreview({
-  outcome,
-  rows,
+function FileSection({
+  file,
   onRowChange,
   materials,
-  materialId,
-  onMaterialChange,
-  rotationPolicy,
-  onRotationPolicyChange,
-  mode,
-  onModeChange,
-  existingPartCount,
   displayUnit,
   fractionDenominator,
-  overrideText,
   onOverrideChange,
   onOverrideBlur,
-  overrideError,
-  onCommit,
-}: ImportPreviewProps) {
-  const noMaterials = materials.length === 0;
-  const noScale = outcome.scale.kind === 'none' && overrideText.trim() === '';
-  const canCommit = !noMaterials && !noScale && !overrideError;
+  showFilename,
+}: FileRowsProps) {
+  const { state } = file;
 
-  const selectedRows = rows.filter((r) => r.selected);
-  const selectedParts = selectedRows.length;
-  const selectedPieces = selectedRows.reduce((sum, r) => sum + Math.max(0, r.qty), 0);
+  if (state.status === 'reading') {
+    return <p className="text-sm text-slate-400">{file.filename}: reading…</p>;
+  }
+
+  if (state.status === 'error') {
+    return (
+      <p className="text-sm text-red-300" role="alert">
+        {showFilename ? `${file.filename}: ` : ''}
+        {state.message}
+      </p>
+    );
+  }
+
+  const { outcome, rows, overrideText, overrideError, thicknessMm } = state;
 
   return (
-    <div className="flex flex-col gap-4">
-      {/* Scale */}
+    <div className="flex flex-col gap-2">
+      {showFilename && (
+        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
+          {file.filename}
+        </p>
+      )}
+
       <div className="flex flex-col gap-2">
         <p className="text-sm text-slate-300">
           {scaleWords(outcome.scale, outcome.drawingWidthMm, displayUnit, fractionDenominator)}
         </p>
         <label className="flex items-center gap-2 text-xs text-slate-400">
-          Drawing is
+          {showFilename ? 'This file is' : 'Drawing is'}
           <input
             type="text"
             value={overrideText}
-            onChange={(e) => onOverrideChange(e.target.value)}
-            onBlur={onOverrideBlur}
+            onChange={(e) => onOverrideChange(file.id, e.target.value)}
+            onBlur={() => onOverrideBlur(file.id)}
             placeholder={toFormatUnit(displayUnit) === 'in' ? `e.g. 24"` : 'e.g. 600mm'}
             className={`w-28 bg-slate-950/80 border ${
               overrideError ? 'border-red-500 text-red-300' : 'border-slate-800 text-slate-100'
@@ -147,9 +202,6 @@ export function ImportPreview({
         {overrideError && <span className="text-[11px] text-red-400">{overrideError}</span>}
       </div>
 
-      <ImportWarnings warnings={outcome.warnings} />
-
-      {/* Parts */}
       <div className="overflow-x-auto border border-slate-800 rounded-lg">
         <table className="w-full text-left border-collapse">
           <thead>
@@ -160,81 +212,165 @@ export function ImportPreview({
               <th className="px-2 py-2 w-24">Height</th>
               <th className="px-2 py-2 w-16 text-center">Qty</th>
               <th className="px-2 py-2 w-16 text-center">Angle</th>
+              {thicknessMm && <th className="px-2 py-2 w-20">Thickness</th>}
+              <th className="px-2 py-2 w-36">Material</th>
               <th className="px-2 py-2">Notes</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((row, index) => (
-              <tr
-                key={row.part.sourceIds.join(',') || row.part.label}
-                className="border-b border-slate-800/60"
-              >
-                <td className="px-2 py-1.5 text-center">
-                  <input
-                    type="checkbox"
-                    checked={row.selected}
-                    onChange={(e) => onRowChange(index, { selected: e.target.checked })}
-                  />
-                </td>
-                <td className="px-2 py-1.5">
-                  <input
-                    type="text"
-                    value={row.label}
-                    onChange={(e) => onRowChange(index, { label: e.target.value })}
-                    className="w-full bg-slate-950/80 border border-slate-800 text-slate-100 text-xs rounded px-2 py-1 focus:outline-none focus:border-amber-500"
-                  />
-                </td>
-                <td className="px-2 py-1.5 text-xs font-mono text-slate-300">
-                  {formatDisplayLength(row.part.width, displayUnit, fractionDenominator)}
-                </td>
-                <td className="px-2 py-1.5 text-xs font-mono text-slate-300">
-                  {formatDisplayLength(row.part.height, displayUnit, fractionDenominator)}
-                </td>
-                <td className="px-2 py-1.5">
-                  <input
-                    type="number"
-                    min="1"
-                    value={row.qty}
-                    onChange={(e) =>
-                      onRowChange(index, { qty: Math.max(1, parseInt(e.target.value, 10) || 1) })
-                    }
-                    className="w-16 bg-slate-950/80 border border-slate-800 text-slate-100 text-xs font-mono rounded px-2 py-1 text-center focus:outline-none focus:border-amber-500"
-                  />
-                </td>
-                <td className="px-2 py-1.5 text-xs font-mono text-center text-slate-400">
-                  {angleText(row.part)}
-                </td>
-                <td className="px-2 py-1.5 text-xs text-amber-400/80">{flagText(row.part)}</td>
-              </tr>
-            ))}
+            {rows.map((row, index) => {
+              const thickness = thicknessForRow(row, thicknessMm);
+              return (
+                <tr
+                  key={row.part.sourceIds.join(',') || row.part.label}
+                  className="border-b border-slate-800/60"
+                >
+                  <td className="px-2 py-1.5 text-center">
+                    <input
+                      type="checkbox"
+                      checked={row.selected}
+                      onChange={(e) => onRowChange(file.id, index, { selected: e.target.checked })}
+                    />
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <input
+                      type="text"
+                      value={row.label}
+                      onChange={(e) => onRowChange(file.id, index, { label: e.target.value })}
+                      className="w-full bg-slate-950/80 border border-slate-800 text-slate-100 text-xs rounded px-2 py-1 focus:outline-none focus:border-amber-500"
+                    />
+                  </td>
+                  <td className="px-2 py-1.5 text-xs font-mono text-slate-300">
+                    {formatDisplayLength(row.part.width, displayUnit, fractionDenominator)}
+                  </td>
+                  <td className="px-2 py-1.5 text-xs font-mono text-slate-300">
+                    {formatDisplayLength(row.part.height, displayUnit, fractionDenominator)}
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <input
+                      type="number"
+                      min="1"
+                      value={row.qty}
+                      onChange={(e) =>
+                        onRowChange(file.id, index, {
+                          qty: Math.max(1, parseInt(e.target.value, 10) || 1),
+                        })
+                      }
+                      className="w-16 bg-slate-950/80 border border-slate-800 text-slate-100 text-xs font-mono rounded px-2 py-1 text-center focus:outline-none focus:border-amber-500"
+                    />
+                  </td>
+                  <td className="px-2 py-1.5 text-xs font-mono text-center text-slate-400">
+                    {angleText(row.part)}
+                  </td>
+                  {thicknessMm && (
+                    <td className="px-2 py-1.5 text-xs font-mono text-slate-300">
+                      {thickness !== null
+                        ? formatDisplayLength(thickness, displayUnit, fractionDenominator)
+                        : ''}
+                    </td>
+                  )}
+                  <td className="px-2 py-1.5">
+                    {materials.length === 0 ? (
+                      <span className="text-xs text-red-400">none</span>
+                    ) : (
+                      <select
+                        value={row.materialId}
+                        onChange={(e) =>
+                          onRowChange(file.id, index, { materialId: e.target.value })
+                        }
+                        className="w-full bg-slate-950/80 border border-slate-800 text-slate-200 text-xs rounded px-2 py-1 focus:outline-none focus:border-amber-500"
+                      >
+                        {materials.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.name} (
+                            {formatDisplayLength(m.thickness, displayUnit, fractionDenominator)})
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </td>
+                  <td className="px-2 py-1.5 text-xs text-amber-400/80">{flagText(row.part)}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
 
+      <ImportWarnings warnings={outcome.warnings} />
+    </div>
+  );
+}
+
+interface ImportPreviewProps {
+  files: PreviewFile[];
+  onRowChange: (
+    fileId: string,
+    index: number,
+    patch: Partial<Pick<PreviewRow, 'label' | 'qty' | 'selected' | 'materialId'>>,
+  ) => void;
+  materials: Material[];
+  rotationPolicy: RotationPolicy;
+  onRotationPolicyChange: (policy: RotationPolicy) => void;
+  mode: 'append' | 'replace';
+  onModeChange: (mode: 'append' | 'replace') => void;
+  existingPartCount: number;
+  displayUnit: DisplayUnit;
+  fractionDenominator: number;
+  onOverrideChange: (fileId: string, text: string) => void;
+  onOverrideBlur: (fileId: string) => void;
+  canCommit: boolean;
+  onCommit: () => void;
+}
+
+export function ImportPreview({
+  files,
+  onRowChange,
+  materials,
+  rotationPolicy,
+  onRotationPolicyChange,
+  mode,
+  onModeChange,
+  existingPartCount,
+  displayUnit,
+  fractionDenominator,
+  onOverrideChange,
+  onOverrideBlur,
+  canCommit,
+  onCommit,
+}: ImportPreviewProps) {
+  const noMaterials = materials.length === 0;
+
+  const selectedRows = files
+    .flatMap((f) => (f.state.status === 'ready' ? f.state.rows : []))
+    .filter((r) => r.selected);
+  const selectedParts = selectedRows.length;
+  const selectedPieces = selectedRows.reduce((sum, r) => sum + Math.max(0, r.qty), 0);
+
+  return (
+    <div className="flex flex-col gap-4">
+      {files.map((file) => (
+        <FileSection
+          key={file.id}
+          file={file}
+          onRowChange={onRowChange}
+          materials={materials}
+          displayUnit={displayUnit}
+          fractionDenominator={fractionDenominator}
+          onOverrideChange={onOverrideChange}
+          onOverrideBlur={onOverrideBlur}
+          showFilename={files.length > 1}
+        />
+      ))}
+
+      {noMaterials && (
+        <p className="text-sm text-red-400">
+          No materials yet - add one in the material manager above before importing.
+        </p>
+      )}
+
       {/* Defaults */}
       <div className="flex flex-wrap items-end gap-4">
-        <div className="flex flex-col gap-1 text-xs text-slate-400">
-          <label htmlFor="import-material">Material</label>
-          {noMaterials ? (
-            <span className="text-red-400">
-              No materials yet - add one in the material manager above before importing.
-            </span>
-          ) : (
-            <select
-              id="import-material"
-              value={materialId}
-              onChange={(e) => onMaterialChange(e.target.value)}
-              className="bg-slate-950/80 border border-slate-800 text-slate-200 text-xs rounded px-2 py-1.5 focus:outline-none focus:border-amber-500"
-            >
-              {materials.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
-
         <label className="flex flex-col gap-1 text-xs text-slate-400">
           Rotation
           <select
