@@ -455,7 +455,7 @@ exact scope may shift slightly as each PR's own "what shipped" notes get added, 
   row unmatched (falling back to the current default) when nothing is close.
 - Report the updated bundle size, the `three`-inclusive lazy chunk's own size, before and after.
 
-### PR 4 - `chore/m5-exit-verification` - close it out
+### PR 4 - `chore/m5-exit-verification` - close it out - **shipped**
 
 - Browser pass: import each committed STL file, confirm sizes and thickness against the source
   model, solve, print, export SVG and DXF. Every panel cuts.
@@ -465,6 +465,48 @@ exact scope may shift slightly as each PR's own "what shipped" notes get added, 
 - `project-plan.md` updated if this milestone resolves or reframes any open question in its §9,
   the way M4's PR 4 resolved question 2.
 - Record what shipped and what changed on the way, the way M4's PRs 1-4 do in this same document.
+
+**What shipped, and what changed on the way.**
+
+- **Exit criterion 1 closed against genuine tool exports, not the reproduction fallback.** Unlike
+  M4, a real search wasn't even needed here: PR 2 had already committed three genuine binary STL
+  exports from ImageToStl.com to `test/files/` and asserted their exact width/height/angle in
+  golden tests against independently-computed raw-geometry values. This PR's browser pass is
+  additional confirmation on top of an already-closed criterion, not what closes it.
+- **Browser pass, done via Chrome automation against the dev build.** All three
+  `test/files/imagetostl-part-*.stl` files dropped into the import dialog in one multi-file drop:
+  each row's shown width/height/angle matched the golden-test values exactly
+  (160.39x40.37mm @ 70.5°, 131.09x135.48mm @ 78.3°, 181.13x51.82mm @ 0°), each showed a
+  detected-thickness column (~4.76mm, close to none of the sample project's single 19.05mm
+  material - the "no close match, falls back to the default" path PR 3's `materialSuggestion`
+  tests already cover, exercised here for real rather than just unit-tested). Overriding one
+  file's width from 7-1/8" to 14-1/4" doubled its shown height and thickness in lockstep,
+  confirming the scale control recomputes every derived field, not just the one being edited;
+  reverting the override recovered the original values exactly. Committed (append) onto the
+  sample bookshelf project: the solver re-ran automatically, placed all 33/33 parts across 3
+  sheets at 7.8% waste, and the on-screen SVG, the hidden print SVG, and both the exported SVG
+  and DXF files for the sheets holding the STL-sourced parts all carried the correct
+  `imagetostl part 1/2/3` labels and dimensions - verified by reading each output's DOM/file
+  content directly rather than relying on a screenshot at a scale where a ~50mm part on a
+  1220x2440mm sheet is a few pixels wide. `imagetostl part 2` placed rotated, correctly marked
+  with the rotation glyph, consistent with the `free90` policy the import dialog applied.
+  Skipped triggering `window.print()` itself, same call M4's PR 4 made - the print component tree
+  is unchanged M3/M4 code, and the browser sandbox treats a native print dialog as a hang.
+  Nothing found needed fixing; PR 3's own two browser-caught bugs (the scale-before-welding
+  ordering bug and the live-`FileList` bug) had already had their fix verified there.
+- **`CLAUDE.md`'s directory listing gained `contours.ts` and `group.ts` as their own top-level
+  `import/` entries**, both already moved out of `svg/` since PR 1/PR 2 but never reflected in the
+  listing, which still described `stl/` with a one-line M5 placeholder. `stl/`'s line now names
+  its real modules (`parse.ts`, `mesh.ts`, `slab.ts`, `project.ts`, `label.ts`); `svg/`'s line
+  dropped `contours`/`group` from its own description since both are shared, not SVG-specific.
+  `docs/plan-m4.md` and `docs/plan-m5.md` were also missing from the `docs/` listing entirely -
+  added alongside the `import/` fix. `three` was already listed under Stack from the project's
+  start, so no change was needed there.
+- **`project-plan.md` §9 is unchanged.** Unlike M4, which resolved open question 2, nothing in M5
+  settles or reframes any of §9's remaining questions (imperial-vs-metric-first, edge trim). The
+  STL-specific risk in §7 ("STL has no units") isn't struck out either, matching how M4 left its
+  own risk-register rows alone - the register describes forward-looking risk, not milestone
+  completion.
 
 ---
 
@@ -505,7 +547,11 @@ exact scope may shift slightly as each PR's own "what shipped" notes get added, 
    not need to survive in the shared importer contract.
 5. **`Contour`/`nestContours` move out of `svg/` into a shared `import/contours.ts`.** Confirmed
    during this planning pass that the code was already fully generic; this is a relocation, not
-   new logic, done so `stl/` never has to import from `svg/`'s own directory.
+   new logic, done so `stl/` never has to import from `svg/`'s own directory. **In PR 2, the same
+   reasoning was applied to quantity grouping**: `group.ts` moved from `svg/` to `import/` too,
+   for the identical reason - it was already fully generic and STL's multi-file drop groups
+   matching parts the same way SVG's repeated shapes do. Not written down as its own numbered
+   decision at the time; recorded here in PR 4's pass for consistency with this one.
 6. **The scale control's default is pre-filled, never silently accepted.** STL's "always ask,
    never guess" rule (`CLAUDE.md`) is upheld exactly as written - every import starts at
    `{ kind: 'none' }` and blocks commit until confirmed - while still pre-filling the most common

@@ -83,9 +83,13 @@ src/
     types.ts       # ImportedPart, ImportWarning, ImportOutcome - shared contract, SVG and STL
     errors.ts      # typed import errors and warnings with user-facing messages
     geometry.ts    # hull, min-area box, signed area, point-in-polygon - shared, SVG and STL
+    contours.ts    # Contour, nestContours, CLOSE_GAP_TOLERANCE_MM - shared, SVG and STL
+    group.ts       # quantity grouping - shared, SVG and STL
     svg/           # SVG -> Part[]: document, viewport/units, transforms, shapes, flatten,
-                    # contours, label, group
-    stl/           # STL -> Part (M5)
+                    # contour classification, label
+    stl/           # STL -> Part: parse (STLLoader wrapper), mesh (weld, connected components,
+                    # manifold check), slab (normal clustering, top/bottom pairing, thickness),
+                    # project (2D projection), label
   export/          # may depend on src/ui/ renderers; domain/ and solver/ may not
     svg.ts         # standalone SVG via renderToStaticMarkup - lazily loaded, pulls react-dom/server
     dxf.ts         # hand-rolled R12 writer, headless, statically imported
@@ -107,6 +111,8 @@ docs/
   plan-m1.md       # M1 implementation plan, scope, and PR sequence
   plan-m2.md       # M2 implementation plan
   plan-m3.md       # M3 implementation plan: cut plan, print, SVG/DXF export
+  plan-m4.md       # M4 implementation plan: SVG import
+  plan-m5.md       # M5 implementation plan: STL import
   solver-design.md # M1 engine design, algorithms, invariants, and benchmarks
 ```
 
@@ -269,15 +275,19 @@ Things that have been decided against, or are easy to get wrong:
 
 ## Current status
 
-Milestone 4 (SVG import) is complete. On top of M3's cut plan, print and export, a woodworker
-can now drop an Inkscape, Illustrator, or Fusion SVG onto the parts table and get parts: the
-importer resolves units, flattens curves, composes transforms, groups identical shapes into
-quantities, and reports every unsupported construct by name rather than dropping it silently.
-Everything above the preview screen is pure and headless (`src/import/`, tested under Node and
-jsdom); the dialog, preview and commit flow live in `src/ui/components/import/` and load in
-their own lazily-fetched chunk, prefetched on mount the same way `export/svg.ts` is.
+Milestone 5 (STL import) is complete. On top of M4's SVG path, a woodworker can now drop a
+Fusion 360, SolidWorks or SketchUp `.stl` export onto the parts table alongside or instead of an
+SVG: the importer welds raw triangle soup into an indexed mesh, splits it into connected
+components, checks each for manifold-ness, clusters triangles by normal to find a slab's top and
+bottom faces, measures thickness, rejects anything that isn't a flat panel (a bracket, a box, a
+carcass modelled as one body) with a specific reason, and projects the accepted slab's outline
+into the same 2D contour/quantity-grouping pipeline SVG already used. Every STL import starts
+with no known scale and blocks commit until the user confirms a real-world size, pre-filled with
+the common case (raw units read as millimetres) so confirming it is one glance, not a typed
+number. Detected thickness pre-selects the closest matching material per row. The dropzone now
+accepts multiple files of either format in one drop, merged into one preview list.
 
-Conventions from M3 and M4 that are easy to break:
+Conventions from M3, M4 and M5 that are easy to break:
 
 - **Display units are `imperial-fraction | imperial-decimal | metric-mm`.** Metric is millimetres
   only. `parseLength` still accepts a `cm` suffix on *input*; there is no cm display mode, and
@@ -298,6 +308,19 @@ Conventions from M3 and M4 that are easy to break:
   Illustrator and Fusion export idioms, not genuine captures from those tools** - each file says
   so in its own header comment. This was an explicit, approved substitution; see `docs/plan-m4.md`
   decision #13.
+- **`Contour`/`nestContours` and quantity grouping (`group.ts`) live in `src/import/`, not inside
+  `svg/`.** Both were already fully generic when SVG alone used them; M5 moved them up rather than
+  having `stl/` reach into `svg/`'s own directory. `docs/plan-m5.md` §8 decision #5.
+- **STL's detected thickness rides beside `ImportOutcome`, not inside it.** `importStl` returns
+  `StlImportOutcome` - the shared `ok:true` shape plus a `thicknessMm: Record<sourceId, number>`
+  map - rather than widening the contract every caller sees. `docs/plan-m5.md` §8 decision #8.
+- **`importStl`'s `mmPerUnitOverride` scales the raw mesh positions immediately after parsing,
+  before welding or anything else runs.** Every downstream tolerance in the shared pipeline
+  (`contours.ts`, `group.ts`) is an absolute millimetre value; scaling late would feed them the
+  mesh's raw, possibly-non-mm units. `docs/plan-m5.md` §8 decision #9.
+- **Material selection is a `materialId` per `PreviewRow`, not one dialog-wide select.** A batch of
+  STL parts can have different measured thicknesses with no single correct default between them.
+  `docs/plan-m5.md` §8 decision #10.
 
-The next active milestone is **M5 (STL import)**. See `docs/project-plan.md` for details. Ask
-before starting substantial work.
+The next active milestone is **M6 (Polish and launch)**. See `docs/project-plan.md` for details.
+Ask before starting substantial work.
