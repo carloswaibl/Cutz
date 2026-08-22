@@ -81,6 +81,34 @@
       }
     },
     {
+      "includes": ["src/storage/**/*.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["react", "react-dom", "react/**", "react-dom/**"],
+                    "message": "storage/ persists data, it does not render. Keep it headless."
+                  },
+                  {
+                    "group": ["**/ui/**"],
+                    "message": "storage/ must not depend on the UI layer."
+                  },
+                  {
+                    "group": ["**/solver/**"],
+                    "message": "storage/ persists projects; solving them is not its concern."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "includes": ["src/import/**/*.ts"],
       "linter": {
         "rules": {
