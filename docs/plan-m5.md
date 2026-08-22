@@ -514,3 +514,36 @@ exact scope may shift slightly as each PR's own "what shipped" notes get added, 
 7. **Material selection stays advisory.** Thickness pre-selects the closest matching material
    within a tolerance; it never creates one. Consistent with M4's "when no materials exist,
    import is disabled with a message pointing at the material manager rather than inventing one."
+
+PR 3 (`feat/import-stl-ui`) added the following, once the dialog/preview were actually wired to
+`.stl` and a real scale started reaching the importer for the first time:
+
+8. **Detected thickness rides beside `ImportOutcome`, not inside it.** `importStl` returns
+   `StlImportOutcome` - the same `ok:true` shape plus a `thicknessMm: Record<sourceId, number>`
+   map - rather than widening the shared `ImportedPart`/`ImportOutcome` contract decision 4
+   already closed. A caller that doesn't know it's looking at STL output never sees the field.
+9. **`importStl` gained `options: { mmPerUnitOverride }`, applied by scaling the raw mesh
+   positions immediately after parsing, before anything else runs.** PR 2 never exercised a
+   confirmed scale (`scale.kind` was always `'none'`), which hid a real bug: `group.ts`'s and
+   `contours.ts`'s grouping/hole-nesting tolerances are absolute millimetres, but were being fed
+   the mesh's raw, possibly-non-mm units. A mesh modelled in inches or metres (not a hypothetical
+   for this app's hobbyist audience) would silently misgroup once real mm were known. Scaling
+   positions before welding fixes this for every downstream absolute-mm tolerance at once, and
+   costs nothing extra to compute - every other tolerance in the pipeline is already relative to
+   the mesh's own bounding box.
+10. **Material selection moved from one dialog-wide `<select>` to a `materialId` per `PreviewRow`.**
+    Thickness suggests a match per row (§8 decision 7's tolerance), and a batch of parts of
+    different measured thicknesses has no single correct default to fall back on. `initialRows`
+    now takes `materials`/`selectedMaterialId`/`thicknessMm` and computes each row's own default.
+11. **The dropzone reads `e.target.files`/`e.dataTransfer.files` into a plain array before doing
+    anything else with it.** A real bug, caught only by driving the actual browser (Playwright,
+    not the unit suite): `HTMLInputElement.files` is a *live* `FileList` - resetting the input's
+    `.value` to clear it for re-selection (needed so picking the same file twice still fires
+    `change`) empties that same `FileList` object in place. Code that captures the live list and
+    reads it after the reset - exactly what a naive multi-file port of M4's single-file
+    `files?.[0]` extraction does - sees zero files every time. `Array.from(...)` before the reset
+    is the fix; the drop path was never affected (nothing resets `dataTransfer` afterward) but was
+    changed to match for the same reason. No unit test catches this class of bug - `ImportDialog`
+    still has none, matching M4's posture that its file-handling glue is verified by driving a
+    real browser, not by test, and PR 3 confirmed the whole pipeline that way (single STL, mixed
+    multi-file SVG+STL drop, full commit) before landing.

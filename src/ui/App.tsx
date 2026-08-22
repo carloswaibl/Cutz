@@ -36,7 +36,7 @@ export function App() {
   // Transient UI state: nothing here is worth undoing or persisting, so it
   // lives outside the reducer, same reasoning as `LayoutViewer`'s exportError.
   const [importOpen, setImportOpen] = useState(false);
-  const [droppedImportFile, setDroppedImportFile] = useState<File | null>(null);
+  const [droppedImportFiles, setDroppedImportFiles] = useState<File[] | null>(null);
 
   /** Layouts with their resolved stock and material, for rendering. */
   const resolvedLayouts = useMemo(() => {
@@ -134,8 +134,8 @@ export function App() {
                 onDuplicatePart={state.duplicatePart}
                 onClearParts={state.clearParts}
                 onOpenImport={() => setImportOpen(true)}
-                onImportFile={(file) => {
-                  setDroppedImportFile(file);
+                onImportFiles={(files) => {
+                  setDroppedImportFiles(files);
                   setImportOpen(true);
                 }}
               />
@@ -198,8 +198,8 @@ export function App() {
       <ImportDialog
         open={importOpen}
         onClose={() => setImportOpen(false)}
-        droppedFile={droppedImportFile}
-        onDroppedFileConsumed={() => setDroppedImportFile(null)}
+        droppedFiles={droppedImportFiles}
+        onDroppedFilesConsumed={() => setDroppedImportFiles(null)}
         materials={state.materials}
         selectedMaterialId={state.selectedMaterialId}
         displayUnit={state.displayUnit}

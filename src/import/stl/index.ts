@@ -78,14 +78,45 @@ function describeComponent(
 }
 
 /**
+ * The success case, widened with per-part thickness.
+ *
+ * Thickness never joins the shared `ImportedPart`/`ImportOutcome` contract
+ * (`docs/plan-m5.md` §8 decision 4 - it is UI-layer information, used once to
+ * pre-select a material) but the preview still needs it somewhere. It rides
+ * beside the outcome, keyed by the same `sourceId` strings that already
+ * survive grouping into `ImportedPart.sourceIds`, so a caller that knows it
+ * is looking at STL output (and only that caller) can look thickness up per
+ * row without widening the SVG-and-STL-generic type.
+ */
+export type StlImportOutcome =
+  | (Extract<ImportOutcome, { ok: true }> & { thicknessMm: Record<string, number> })
+  | Extract<ImportOutcome, { ok: false }>;
+
+/**
  * Parse one STL file into parts.
  *
  * A file's mesh is split into connected components first; each is
  * independently validated as a slab or rejected (`docs/plan-m5.md` §8
  * decision 2) - a body with several disconnected shapes fused into one STL
  * export is a real CAD workflow, not a hypothetical one.
+ *
+ * `options.mmPerUnitOverride`, once a user confirms a real-world size in the
+ * preview (PR 3), scales the raw mesh positions before anything else runs.
+ * This matters beyond just reporting the right numbers: `group.ts`'s and
+ * `contours.ts`'s grouping/hole-nesting tolerances are absolute millimetres,
+ * and without this the mesh's raw units - which are not guaranteed to be
+ * anywhere near millimetre-scale (a mesh modelled in inches or metres is a
+ * real case, not a hypothetical one) - would silently feed those tolerances
+ * the wrong-scale numbers. Every other tolerance in this pipeline (welding,
+ * slab's planar tolerance) is already relative to the mesh's own bounding
+ * box, so rescaling the raw positions and re-running the same pipeline is
+ * correct and needs no special-casing past this one point of entry.
  */
-export function importStl(bytes: ArrayBuffer, filename: string): ImportOutcome {
+export function importStl(
+  bytes: ArrayBuffer,
+  filename: string,
+  options?: { mmPerUnitOverride?: number },
+): StlImportOutcome {
   if (bytes.byteLength > MAX_FILE_BYTES) {
     return { ok: false, error: fileTooLarge(bytes.byteLength) };
   }
@@ -103,12 +134,22 @@ export function importStl(bytes: ArrayBuffer, filename: string): ImportOutcome {
     return { ok: false, error: notStl() };
   }
 
+  const scale = options?.mmPerUnitOverride ?? 1;
+  if (scale !== 1) {
+    const scaled = new Float32Array(soup.positions.length);
+    for (let i = 0; i < soup.positions.length; i += 1) {
+      scaled[i] = (soup.positions[i] ?? 0) * scale;
+    }
+    soup = { positions: scaled };
+  }
+
   const mesh = weldTriangleSoup(soup);
   const components = splitComponents(mesh);
 
   const warnings: ImportWarning[] = [];
   let discardedHoles = 0;
   const accepted: { box: OrientedBox; sourceId: string }[] = [];
+  const thicknessMm: Record<string, number> = {};
 
   components.forEach((component, index) => {
     const manifold = checkManifold(mesh, component);
@@ -131,10 +172,9 @@ export function importStl(bytes: ArrayBuffer, filename: string): ImportOutcome {
     discardedHoles += nested.holeCount;
 
     nested.outers.forEach((outer, outerIndex) => {
-      accepted.push({
-        box: outer.box,
-        sourceId: `${filename}#${index}${nested.outers.length > 1 ? `-${outerIndex}` : ''}`,
-      });
+      const sourceId = `${filename}#${index}${nested.outers.length > 1 ? `-${outerIndex}` : ''}`;
+      accepted.push({ box: outer.box, sourceId });
+      thicknessMm[sourceId] = slab.thickness;
     });
   });
 
@@ -156,6 +196,12 @@ export function importStl(bytes: ArrayBuffer, filename: string): ImportOutcome {
   // more than one part in the file. `docs/plan-m5.md` doesn't resolve which
   // part's extent should represent a multi-part file; the largest by area is
   // the most defensible single number.
+  //
+  // `row.box` is already in post-`scale` space (the raw positions were scaled
+  // before parsing began), so this is divided back down by `scale` to keep
+  // `extentWidth`/`extentHeight` in raw units - the contract every caller of
+  // `mmPerUnitOverride = enteredMm / extentWidth` depends on, unchanged by
+  // whether this particular call happened to already carry a scale.
   let extentWidth: number | null = null;
   let extentHeight: number | null = null;
   let largestArea = -1;
@@ -163,8 +209,8 @@ export function importStl(bytes: ArrayBuffer, filename: string): ImportOutcome {
     const area = row.box.width * row.box.height;
     if (area > largestArea) {
       largestArea = area;
-      extentWidth = row.box.width;
-      extentHeight = row.box.height;
+      extentWidth = row.box.width / scale;
+      extentHeight = row.box.height / scale;
     }
   }
 
@@ -172,10 +218,11 @@ export function importStl(bytes: ArrayBuffer, filename: string): ImportOutcome {
     ok: true,
     parts: grouped.parts,
     warnings: [...warnings, ...grouped.warnings],
-    scale: { kind: 'none' },
-    drawingWidthMm: null,
-    drawingHeightMm: null,
+    scale: scale === 1 ? { kind: 'none' } : { kind: 'user', mmPerUnit: scale },
+    drawingWidthMm: scale === 1 ? null : extentWidth === null ? null : extentWidth * scale,
+    drawingHeightMm: scale === 1 ? null : extentHeight === null ? null : extentHeight * scale,
     extentWidth,
     extentHeight,
+    thicknessMm,
   };
 }

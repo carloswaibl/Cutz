@@ -3,8 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { Part, SolverConfig, Stock } from '../../src/domain/types';
 import { validateInputs } from '../../src/domain/validate';
 import { MAX_FILE_BYTES } from '../../src/import/errors';
-import { importStl } from '../../src/import/stl';
-import type { ImportOutcome } from '../../src/import/types';
+import { importStl, type StlImportOutcome } from '../../src/import/stl';
 import {
   baseWithFusedFinTriangles,
   boxTriangles,
@@ -14,7 +13,7 @@ import {
   translateTriangles,
 } from './stlFixtures';
 
-function ok(outcome: ImportOutcome): Extract<ImportOutcome, { ok: true }> {
+function ok(outcome: StlImportOutcome): Extract<StlImportOutcome, { ok: true }> {
   if (!outcome.ok)
     throw new Error(`import failed: ${outcome.error.kind} - ${outcome.error.message}`);
   return outcome;
@@ -184,6 +183,72 @@ describe('a mesh that is not a slab', () => {
   });
 });
 
+describe('thicknessMm', () => {
+  it("reports each accepted part's thickness, keyed by its sourceId", () => {
+    const bytes = buildBinaryStl(slabTriangles(600, 300, 18));
+    const outcome = ok(importStl(bytes, 'shelf.stl'));
+    const part = outcome.parts[0];
+    if (!part) throw new Error('expected a part');
+    expect(part.sourceIds.length).toBeGreaterThan(0);
+    for (const id of part.sourceIds) {
+      expect(outcome.thicknessMm[id]).toBeCloseTo(18, 3);
+    }
+  });
+
+  it('carries no entry for a rejected component', () => {
+    const bytes = buildBinaryStl(boxTriangles([0, 0, 0], [100, 100, 100]));
+    const outcome = ok(importStl(bytes, 'cube.stl'));
+    expect(Object.keys(outcome.thicknessMm)).toHaveLength(0);
+  });
+});
+
+describe('mmPerUnitOverride', () => {
+  it('scales reported width, height and thickness by the given factor', () => {
+    const bytes = buildBinaryStl(slabTriangles(600, 300, 18));
+    const scaled = ok(importStl(bytes, 'shelf.stl', { mmPerUnitOverride: 2 }));
+
+    expect(scaled.scale).toEqual({ kind: 'user', mmPerUnit: 2 });
+    const part = scaled.parts[0];
+    if (!part) throw new Error('expected a part');
+    expect([part.width, part.height].sort((a, b) => a - b)).toEqual([
+      expect.closeTo(600, 1),
+      expect.closeTo(1200, 1),
+    ]);
+    for (const id of part.sourceIds) {
+      expect(scaled.thicknessMm[id]).toBeCloseTo(36, 1);
+    }
+
+    // `extentWidth`/`extentHeight` stay in raw units regardless of the
+    // factor already applied - the contract every caller of
+    // `mmPerUnitOverride = enteredMm / extentWidth` depends on.
+    expect([scaled.extentWidth, scaled.extentHeight].sort((a, b) => (a ?? 0) - (b ?? 0))).toEqual([
+      expect.closeTo(300, 1),
+      expect.closeTo(600, 1),
+    ]);
+    expect(scaled.drawingWidthMm).not.toBeNull();
+  });
+
+  it('rescales the mm-denominated grouping tolerance along with the mesh, not just the reported numbers', () => {
+    // Two slabs 0.03 raw units apart in width. Read directly as millimetres
+    // (no override - matching PR 2's always-`none` behaviour) that is well
+    // under the 0.5mm grouping tolerance, so they collapse into one part. Once
+    // told the mesh is actually modelled in inches (`mmPerUnitOverride:
+    // 25.4`), the same 0.03-unit gap is 0.762mm apart - over the tolerance -
+    // and must stay two separate parts. Without scaling the mesh before
+    // grouping runs, this second case would wrongly group anyway.
+    const a = slabTriangles(600, 300, 18);
+    const b = translateTriangles(slabTriangles(600.03, 300, 18), [2000, 0, 0]);
+    const bytes = buildBinaryStl([...a, ...b]);
+
+    const raw = ok(importStl(bytes, 'pair.stl'));
+    expect(raw.parts).toHaveLength(1);
+    expect(raw.parts[0]?.qty).toBe(2);
+
+    const scaled = ok(importStl(bytes, 'pair.stl', { mmPerUnitOverride: 25.4 }));
+    expect(scaled.parts).toHaveLength(2);
+  });
+});
+
 describe('files that cannot be used at all', () => {
   it('rejects a file over the size cap', () => {
     const bytes = new ArrayBuffer(MAX_FILE_BYTES + 1);
@@ -241,18 +306,25 @@ describe('properties that must hold for every accepted file', () => {
   it('parses the largest committed file well inside a frame', () => {
     // imagetostl-part-2.stl is the largest committed STL - 953KB, ~19,000
     // triangles - matching `importSvg.test.ts`'s discipline of measuring
-    // against the largest real file rather than a synthetic one. The frame is
-    // looser than SVG's 250ms: an image-traced silhouette has ~1900x the
-    // triangle count of a hand-modelled woodworking panel (this app's actual
-    // target size, `CLAUDE.md` constraint 4), so this file is a stress case
-    // for mesh math, not the typical one - and per-triangle Vector3 work in
-    // `slab.ts`/`project.ts` runs measurably slower under the rest of the
-    // suite's CPU contention than in isolation.
+    // against the largest real file rather than a synthetic one. The frame
+    // is looser than SVG's 250ms: an image-traced silhouette has ~1900x the
+    // triangle count of a hand-modelled woodworking panel (this app's
+    // actual target size, `CLAUDE.md` constraint 4), so this file is a
+    // stress case for mesh math, not the typical one - and per-triangle
+    // Vector3 work in `slab.ts`/`project.ts` runs measurably slower under
+    // the rest of the suite's CPU contention than in isolation.
+    //
+    // The 20-iteration loop's own wall time can legitimately approach
+    // vitest's 5000ms default *test* timeout under that same contention
+    // even while every iteration is comfortably inside its own 600ms
+    // budget (up to 12s at the limit) - that is a framework timeout, not a
+    // performance regression, so this test gets its own longer timeout
+    // rather than a looser per-iteration budget.
     const bytes = loadStl('imagetostl-part-2.stl');
     const started = performance.now();
     for (let i = 0; i < 20; i += 1) importStl(bytes, 'imagetostl-part-2.stl');
     const each = (performance.now() - started) / 20;
     console.log(`  import of ${(bytes.byteLength / 1024).toFixed(1)}KB: ${each.toFixed(1)}ms`);
     expect(each).toBeLessThan(600);
-  });
+  }, 15000);
 });
