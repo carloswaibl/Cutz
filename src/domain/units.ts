@@ -16,6 +16,15 @@ import { approxEq } from './geometry';
 /** Units the UI can display in. Parsing accepts more suffixes than this. */
 export type Unit = 'mm' | 'in';
 
+/**
+ * Metric is millimetres only, deliberately. Sheet goods, cabinet plans and saw
+ * scales are all specified in mm, so a centimetre setting buys nothing and puts
+ * a third case in every formatter, table and exporter that fans out from here.
+ * `parseLength` still accepts a `cm` suffix on input, so a user who thinks in
+ * centimetres can type `60cm` and get 600mm whatever this is set to.
+ */
+export type DisplayUnit = 'imperial-fraction' | 'imperial-decimal' | 'metric-mm';
+
 export const MM_PER_INCH = 25.4;
 
 export function mmToInch(mm: number): number {
