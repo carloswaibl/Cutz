@@ -385,9 +385,19 @@ export function LayoutViewer({
                 </div>
               </div>
 
-              {/* Pan/Zoom Canvas */}
+              {/*
+                Pan/Zoom Canvas.
+
+                Height, not width, is what sizes the diagram: sheet goods are
+                portrait (a 4'x8' is 1:2), so a sheet scaled to fit this box is
+                always bound by the shorter dimension. Hence a tall viewport-
+                relative box rather than the full page width - widening the
+                container alone just adds empty space either side of the sheet.
+                Capped so it stays a panel on a very tall display, and floored
+                so it does not collapse on a laptop in landscape.
+              */}
               <TransformComponent
-                wrapperStyle={{ width: '100%', height: '500px' }}
+                wrapperStyle={{ width: '100%', height: 'clamp(500px, 72vh, 820px)' }}
                 contentStyle={{
                   width: '100%',
                   height: '100%',

@@ -297,7 +297,7 @@ material filter) autosave must ignore. Fixed by reading each of the seven fields
 own member expression in the effect body, matching the individual fields already listed
 in its dependency array.
 
-### PR 3 - `chore/launch-polish` - non-code readiness
+### PR 3 - `chore/launch-polish` - non-code readiness - **shipped**
 
 - `README.md`: what the project is, `npm run dev`/`build`/`test:run`, license mention.
 - `LICENSE` (MIT), `package.json` `"license"`/`"repository"`/`"homepage"` fields.
@@ -305,6 +305,60 @@ in its dependency array.
 - `Footer` component per §4.
 - No behavior change to solver/import/export - this PR is docs and static metadata plus
   one small presentational component.
+
+**What shipped, and what changed on the way.**
+
+- **The version string has one source.** `package.json`'s version was already hardcoded a
+  second time as a `v0.1` badge in `Header.tsx`, and the footer would have been a third
+  copy - already drifted, since the badge said `v0.1` against a `0.1.0` package. `vite.config.ts`
+  now reads `package.json` and exposes the version as a `__APP_VERSION__` `define`, declared
+  in `src/vite-env.d.ts`; `Header` and `Footer` both read it. Chosen over importing the JSON
+  so `resolveJsonModule` stays off and the manifest stays out of the bundle.
+- **The footer renders on the empty state too**, not just the main app - §4 said "bottom of
+  `App.tsx`", but a first-ever visitor is precisely the audience for "open source, MIT, runs
+  on your machine". `App`'s `isEmpty` branch now owns a `min-h-screen flex flex-col` shell and
+  `NewProjectPrompt` became `flex-1` instead of `min-h-screen`. No print rule was needed: the
+  footer sits inside the app shell that `print.css` already blanks.
+- **The OG image is a real screenshot of a solved layout**, not a designed brand card -
+  decided with the project owner. It will go stale as the UI changes; that is the accepted
+  cost of a preview that shows a woodworker an actual cut diagram. Both it and
+  `docs/screenshot.png` were captured from the running app and resized with macOS `sips`,
+  which also rendered `favicon.svg` to `apple-touch-icon.png`. No new dependency.
+- **Icon links are relative and `og:`/`twitter:` URLs are absolute.** `vite.config.ts` sets
+  `base: './'` for the GitHub Pages subpath, but link-preview scrapers fetch meta tags out of
+  context and do not resolve relative paths - so `https://carloswaibl.github.io/Cutz/` is
+  hardcoded in those two tags and nowhere else.
+
+**The layout change this PR also made, which §5 did not anticipate.**
+
+Building the screenshot exposed a real defect rather than a cosmetic one, so it was fixed
+here rather than deferred:
+
+- **The results moved out of the right-hand column and onto the full page width.** Parts sat
+  in a 7/12 column with stock, the summary, the cut diagram and the cut sequence stacked in
+  the 5/12 column beside it. Because the parts table is short and that stack is long, the left
+  column was empty for roughly 1,930px of scroll, while the cut diagram - the thing the tool
+  produces - rendered 300px wide inside a 493px column. No plan doc recorded the 7/5 split as
+  a decision.
+- **Parts and stock are now full-width siblings, stacked, not side by side.** Pairing them was
+  tried first and does not fit at any screen size: `main` is capped at `max-w-7xl` (1280px), so
+  a half-width column is ~596px however wide the monitor, and the parts table needs ~672px
+  before its columns start clipping.
+- **Both tables gained `min-w` and their dimension columns `min-w-[5.5rem]`.** Under auto table
+  layout a `w-32` on a cell is only a hint, and the squeezed columns were clipping their inputs'
+  values: the part label input rendered at 37px for a 100px value, and `11-3/4"` displayed as
+  `11-3/`. A clipped dimension is a number a woodworker can misread straight into a wrong cut,
+  so these now scroll (the wrapper was already `overflow-x-auto`) rather than crush. Verified
+  at 1618px, 1440px and a constrained 900px: no clipped values and no scrollbars at any of them.
+- **The cut diagram's viewport is `clamp(500px, 72vh, 820px)` tall**, up from a flat `500px`.
+  Sheet goods are portrait, so a sheet scaled to fit is bound by height - widening the container
+  alone would only have added empty space either side.
+
+**Left for PR 4.** The diagram panel is now full width with a portrait sheet centred in it, so
+there is unused space either side. The cut-sequence panel is already a sibling of the diagram
+inside `LayoutViewer`; placing the two side by side on wide screens would fill that space with
+the one thing a user reads next to the diagram. Not done here to keep this PR from becoming a
+third layout restructure.
 
 ### PR 4 - `chore/m6-exit-verification` - close it out
 
