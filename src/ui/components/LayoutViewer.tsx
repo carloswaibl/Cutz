@@ -56,6 +56,7 @@ interface ResolvedLayout {
 
 interface LayoutViewerProps {
   layouts: ResolvedLayout[];
+  projectName: string;
   parts: Part[];
   config: SolverConfig;
   displayUnit: DisplayUnit;
@@ -74,6 +75,7 @@ interface LayoutViewerProps {
 
 export function LayoutViewer({
   layouts,
+  projectName,
   parts,
   config,
   displayUnit,
@@ -171,6 +173,7 @@ export function LayoutViewer({
       showPartNumbers: overlay,
     };
     const filename = sheetFileName({
+      projectName,
       sheetNumber: index + 1,
       material: entry.material,
       extension: format,

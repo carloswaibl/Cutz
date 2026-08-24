@@ -26,6 +26,17 @@ export interface AppState {
   showCutSequence: boolean;
 }
 
+/** The persisted subset of `AppState` a saved project carries - see `src/storage/types.ts`. */
+export interface ProjectFields {
+  displayUnit: DisplayUnit;
+  fractionDenominator: number;
+  materials: Material[];
+  parts: Part[];
+  stock: Stock[];
+  config: SolverConfig;
+  showCutSequence: boolean;
+}
+
 export type CutListAction =
   | { type: 'SET_UNIT'; unit: DisplayUnit }
   | { type: 'SET_FRACTION_DENOMINATOR'; denominator: number }
@@ -46,16 +57,7 @@ export type CutListAction =
   | { type: 'UPDATE_STOCK'; id: string; stock: Partial<Stock> }
   | { type: 'DELETE_STOCK'; id: string }
   | { type: 'IMPORT_PARTS'; parts: Part[]; mode: 'append' | 'replace' }
-  | {
-      type: 'LOAD_PRESET';
-      preset: {
-        materials: Material[];
-        parts: Part[];
-        stock: Stock[];
-        config?: Partial<SolverConfig>;
-      };
-    }
-  | { type: 'RESET_ALL' };
+  | { type: 'LOAD_PROJECT'; project: ProjectFields };
 
 export interface CutListStateReturn extends AppState {
   result: Result | null;
@@ -86,7 +88,6 @@ export interface CutListStateReturn extends AppState {
   updateStock: (id: string, stock: Partial<Stock>) => void;
   deleteStock: (id: string) => void;
   importParts: (parts: Omit<Part, 'id'>[], mode: 'append' | 'replace') => void;
-  loadPreset: (presetKey: string) => void;
-  resetAll: () => void;
+  loadProject: (project: ProjectFields) => void;
   reSolve: () => void;
 }

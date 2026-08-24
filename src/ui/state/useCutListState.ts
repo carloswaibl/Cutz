@@ -2,8 +2,14 @@ import { useCallback, useMemo, useReducer } from 'react';
 import { buildCutPlans, type CutPlan } from '../../domain/cutplan';
 import type { Material, Part, Result, Stock } from '../../domain/types';
 import { solve } from '../../solver/index';
-import { BOOKSHELF_PRESET, PRESETS } from './presets';
-import type { AppState, CutListAction, CutListStateReturn, DisplayUnit } from './types';
+import { BOOKSHELF_PRESET } from './presets';
+import type {
+  AppState,
+  CutListAction,
+  CutListStateReturn,
+  DisplayUnit,
+  ProjectFields,
+} from './types';
 
 const INITIAL_STATE: AppState = {
   displayUnit: 'imperial-fraction',
@@ -121,19 +127,14 @@ export function cutListReducer(state: AppState, action: CutListAction): AppState
         activeSheetIndex: 0,
       };
 
-    case 'LOAD_PRESET':
+    case 'LOAD_PROJECT':
       return {
         ...state,
-        materials: action.preset.materials,
-        parts: action.preset.parts,
-        stock: action.preset.stock,
-        config: action.preset.config ? { ...state.config, ...action.preset.config } : state.config,
+        ...action.project,
         activeSheetIndex: 0,
+        hoveredPartId: null,
         selectedMaterialId: 'all',
       };
-
-    case 'RESET_ALL':
-      return { ...INITIAL_STATE };
 
     default:
       return state;
@@ -275,15 +276,8 @@ export function useCutListState(): CutListStateReturn {
     dispatch({ type: 'DELETE_STOCK', id });
   }, []);
 
-  const loadPreset = useCallback((presetKey: string) => {
-    const preset = PRESETS[presetKey];
-    if (preset) {
-      dispatch({ type: 'LOAD_PRESET', preset });
-    }
-  }, []);
-
-  const resetAll = useCallback(() => {
-    dispatch({ type: 'RESET_ALL' });
+  const loadProject = useCallback((project: ProjectFields) => {
+    dispatch({ type: 'LOAD_PROJECT', project });
   }, []);
 
   const reSolve = useCallback(() => {
@@ -319,8 +313,7 @@ export function useCutListState(): CutListStateReturn {
     updateStock,
     deleteStock,
     importParts,
-    loadPreset,
-    resetAll,
+    loadProject,
     reSolve,
   };
 }

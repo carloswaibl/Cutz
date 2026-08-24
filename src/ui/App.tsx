@@ -7,12 +7,13 @@ import { Header } from './components/Header';
 import { ImportDialog } from './components/import/ImportDialog';
 import { LayoutViewer } from './components/LayoutViewer';
 import { MaterialManager } from './components/MaterialManager';
+import { NewProjectPrompt } from './components/NewProjectPrompt';
 import { PartTable } from './components/PartTable';
 import { PrintDocument } from './components/print/PrintDocument';
 import { StockTable } from './components/StockTable';
 import { SummaryCard } from './components/SummaryCard';
 import { UnplacedAlert } from './components/UnplacedAlert';
-import { useCutListState } from './state/useCutListState';
+import { useProjectStorage } from './state/useProjectStorage';
 
 /** Resolve a layout's stockInstanceId to the Stock and Material it belongs to. */
 function resolveLayout(
@@ -30,7 +31,7 @@ function resolveLayout(
 }
 
 export function App() {
-  const state = useCutListState();
+  const state = useProjectStorage();
   const fracDenom = fractionDenominatorFromUnit(state.displayUnit);
 
   // Transient UI state: nothing here is worth undoing or persisting, so it
@@ -83,6 +84,17 @@ export function App() {
       ? null
       : (state.materials.find((m) => m.id === state.selectedMaterialId)?.name ?? null);
 
+  // Loading (reading IndexedDB on mount) and empty (nothing saved yet) each
+  // replace the whole tree rather than rendering it against placeholder data -
+  // `docs/plan-m6.md` §1 criterion 3 and §4.
+  if (state.isLoading) {
+    return <div className="min-h-screen bg-slate-950" />;
+  }
+
+  if (state.isEmpty) {
+    return <NewProjectPrompt onCreateProject={state.createProject} />;
+  }
+
   return (
     <>
       <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
@@ -91,7 +103,13 @@ export function App() {
           effort={state.config.effort}
           onUnitChange={state.setUnit}
           onEffortChange={(effort) => state.setConfig({ effort })}
-          onLoadPreset={state.loadPreset}
+          activeProjectId={state.activeProjectId}
+          activeProjectName={state.activeProjectName}
+          projects={state.projects}
+          onSwitchProject={state.switchProject}
+          onRenameProject={state.renameProject}
+          onCreateProject={state.createProject}
+          onDeleteProject={state.deleteProject}
           canPrint={printableLayouts.length > 0}
         />
 
@@ -174,6 +192,7 @@ export function App() {
 
                   <LayoutViewer
                     layouts={resolvedLayouts}
+                    projectName={state.activeProjectName}
                     parts={state.parts}
                     config={state.config}
                     displayUnit={state.displayUnit}

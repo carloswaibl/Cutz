@@ -246,7 +246,7 @@ as each PR's own "what shipped" notes get added here, the way M4's and M5's did.
   deleting one project never touches another's stored record; `updatedAt` advances on
   update; listing returns `ProjectSummary`, not full payloads.
 
-### PR 2 - `feat/project-persistence` - wiring, autosave, UI
+### PR 2 - `feat/project-persistence` - wiring, autosave, UI - **shipped**
 
 - `useProjectStorage` per §3.3, composed into `App.tsx`.
 - `ProjectMenu` and the empty-state "New Project" flow per §4, replacing `Header`'s
@@ -258,6 +258,44 @@ as each PR's own "what shipped" notes get added here, the way M4's and M5's did.
 - Tests: debounced autosave actually persists after a change; reload restores the active
   project; switching projects never bleeds one project's edits into another's stored
   record; deleting the active project falls back to the empty state, not a crash.
+
+**What shipped, and what changed on the way.**
+
+- **A new headless module, `src/ui/state/projectStore.ts`, holds every piece of logic
+  that doesn't need React** (initial-project resolution, blank/template project input,
+  the `AppState`/`Project` -> `ProjectFields` mapping, delete-fallback selection, a
+  generic debouncer), tested directly against `fake-indexeddb`/`vi.useFakeTimers()` with
+  no renderer. `useProjectStorage.ts` wraps it as a thin hook, verified manually in the
+  browser. This wasn't spelled out in §3.3 - it follows a convention `test/ui/state.test.ts`
+  already stated for `useCutListState`, and avoids adding `@testing-library/react` (not
+  named in §1 criterion 8's two approved new dependencies).
+- **`LOAD_PRESET`/`loadPreset` and `RESET_ALL`/`resetAll` removed from `cutListReducer`
+  and `useCutListState`, replaced by one `LOAD_PROJECT` action.** Both were dead code the
+  moment `ProjectMenu` took over "load a preset" (now "create a project from a
+  template," which persists rather than overlaying live state) - grepped confirmed no
+  other caller.
+- **Deletion is confirmed with `window.confirm`, not a modal component.** No modal exists
+  anywhere in this codebase; building one for this single call site would be new UI
+  infrastructure the milestone didn't ask for.
+- **Filename format is `cutz-{project-slug}-sheet-{n}-{material-slug}.ext`.** Both slugs
+  independently fall back to omitting themselves (not the whole segment) when a name
+  slugs to nothing, matching the material slug's existing fallback behavior.
+- **`ProjectMenu`'s "New Project" section and the full-screen empty-state prompt
+  (`NewProjectPrompt.tsx`) are two components, not one reused verbatim** - the empty
+  state needed a different visual (full-screen cards, not a dropdown panel) even though
+  both read the same `PRESETS` list and call the same `createProject`.
+
+No bugs surfaced by the tests this time; the type system caught the two design slips
+worth recording. First, `pickProjectFields` was originally typed to take `AppState`,
+which doesn't type-check against a loaded `Project` (missing `activeSheetIndex` etc.) -
+retyped to take `ProjectFields` itself, which both `AppState` and `Project` satisfy
+structurally, so the same function serves both the autosave direction and the load
+direction. Second, the autosave effect originally called `pickProjectFields(state)`
+inside a `useEffect`, which would have needed bare `state` in the dependency array -
+firing on every dispatch, including the purely transient ones (hover, active sheet,
+material filter) autosave must ignore. Fixed by reading each of the seven fields by its
+own member expression in the effect body, matching the individual fields already listed
+in its dependency array.
 
 ### PR 3 - `chore/launch-polish` - non-code readiness
 
