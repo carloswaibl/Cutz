@@ -4,6 +4,12 @@
   "private": true,
   "type": "module",
   "description": "A free, browser-based cut list optimizer for hobbyist woodworkers.",
+  "license": "MIT",
+  "homepage": "https://carloswaibl.github.io/Cutz/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/carloswaibl/Cutz.git"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

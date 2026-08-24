@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Cutz">
+  <title>Cutz</title>
+  <!-- The header's brand mark, standalone. The "C" is drawn as a stroked arc
+       rather than a <text> glyph: a favicon is rendered outside the page, so
+       it cannot rely on any font being available. -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f59e0b" />
+      <stop offset="1" stop-color="#d97706" />
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#tile)" />
+  <path
+    d="M 42.6 21.4 A 15 15 0 1 0 42.6 42.6"
+    fill="none"
+    stroke="#020617"
+    stroke-width="8.5"
+    stroke-linecap="round"
+  />
+</svg>

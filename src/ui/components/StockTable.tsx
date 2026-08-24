@@ -263,12 +263,13 @@ export function StockTable({
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full text-left border-collapse">
+        {/* Same reasoning as `PartTable`: scroll before crushing a dimension. */}
+        <table className="w-full min-w-[34rem] text-left border-collapse">
           <thead>
             <tr className="border-b border-slate-800 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
               <th className="px-3 py-2">Material</th>
-              <th className="px-3 py-2 w-32">Width</th>
-              <th className="px-3 py-2 w-32">Height</th>
+              <th className="px-3 py-2 w-28 min-w-[5.5rem]">Width</th>
+              <th className="px-3 py-2 w-28 min-w-[5.5rem]">Height</th>
               <th className="px-3 py-2 w-20 text-center">Qty</th>
               <th className="px-3 py-2 text-center">Grain Direction</th>
               <th className="px-3 py-2 text-right">Actions</th>

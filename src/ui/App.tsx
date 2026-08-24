@@ -3,6 +3,7 @@ import type { CutPlan } from '../domain/cutplan';
 import { parseStockInstanceId } from '../domain/instances';
 import type { Layout, Material, Stock } from '../domain/types';
 import { ConfigBar } from './components/ConfigBar';
+import { Footer } from './components/Footer';
 import { Header } from './components/Header';
 import { ImportDialog } from './components/import/ImportDialog';
 import { LayoutViewer } from './components/LayoutViewer';
@@ -91,8 +92,16 @@ export function App() {
     return <div className="min-h-screen bg-slate-950" />;
   }
 
+  // The footer carries here too, not just on the main app: a first-ever
+  // visitor is exactly who needs to be told this is open source, MIT, and
+  // running entirely on their own machine.
   if (state.isEmpty) {
-    return <NewProjectPrompt onCreateProject={state.createProject} />;
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
+        <NewProjectPrompt onCreateProject={state.createProject} />
+        <Footer />
+      </div>
+    );
   }
 
   return (
@@ -135,83 +144,94 @@ export function App() {
             onDeleteMaterial={state.deleteMaterial}
           />
 
-          {/* Main Grid: Parts & Stock Entry */}
-          <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
-            <div className="xl:col-span-7 flex flex-col gap-6">
-              <PartTable
+          {/*
+            One column, full width, top to bottom: materials, parts, stock,
+            then the results.
+
+            Parts and stock used to sit side by side, which read as a sensible
+            pairing but never actually fit. `main` is capped at `max-w-7xl`
+            (1280px), so a half-width column is about 596px at *every* screen
+            size, however wide the monitor - and the parts table needs roughly
+            672px before its columns start clipping the values inside them
+            (see its own `min-w`). The result was a permanent scrollbar under
+            the parts table and dimensions rendering as `11-3/`, which is a
+            number a woodworker can misread straight into a wrong cut.
+
+            Full width also suits the cut diagram below, which is the thing the
+            tool actually produces.
+          */}
+          <PartTable
+            parts={state.parts}
+            materials={state.materials}
+            displayUnit={state.displayUnit}
+            fractionDenominator={fracDenom}
+            selectedMaterialId={state.selectedMaterialId}
+            hoveredPartId={state.hoveredPartId}
+            onHoverPart={state.setHoveredPartId}
+            onAddPart={state.addPart}
+            onUpdatePart={state.updatePart}
+            onDeletePart={state.deletePart}
+            onDuplicatePart={state.duplicatePart}
+            onClearParts={state.clearParts}
+            onOpenImport={() => setImportOpen(true)}
+            onImportFiles={(files) => {
+              setDroppedImportFiles(files);
+              setImportOpen(true);
+            }}
+          />
+
+          <StockTable
+            stock={state.stock}
+            materials={state.materials}
+            displayUnit={state.displayUnit}
+            fractionDenominator={fracDenom}
+            selectedMaterialId={state.selectedMaterialId}
+            onAddStock={state.addStock}
+            onUpdateStock={state.updateStock}
+            onDeleteStock={state.deleteStock}
+          />
+
+          {/* Solver Status & Cut Diagrams */}
+          {state.result && (
+            <>
+              <SummaryCard
+                result={state.result}
                 parts={state.parts}
                 materials={state.materials}
+                stock={state.stock}
+              />
+
+              <UnplacedAlert
+                unplacedParts={state.result.unplacedParts}
+                parts={state.parts}
+                stock={state.stock}
+                config={state.config}
                 displayUnit={state.displayUnit}
                 fractionDenominator={fracDenom}
-                selectedMaterialId={state.selectedMaterialId}
+              />
+
+              <LayoutViewer
+                layouts={resolvedLayouts}
+                projectName={state.activeProjectName}
+                parts={state.parts}
+                config={state.config}
+                displayUnit={state.displayUnit}
+                fractionDenominator={fracDenom}
                 hoveredPartId={state.hoveredPartId}
                 onHoverPart={state.setHoveredPartId}
-                onAddPart={state.addPart}
-                onUpdatePart={state.updatePart}
-                onDeletePart={state.deletePart}
-                onDuplicatePart={state.duplicatePart}
-                onClearParts={state.clearParts}
-                onOpenImport={() => setImportOpen(true)}
-                onImportFiles={(files) => {
-                  setDroppedImportFiles(files);
-                  setImportOpen(true);
-                }}
-              />
-            </div>
-
-            <div className="xl:col-span-5 flex flex-col gap-6">
-              <StockTable
-                stock={state.stock}
-                materials={state.materials}
-                displayUnit={state.displayUnit}
-                fractionDenominator={fracDenom}
+                activeSheetIndex={state.activeSheetIndex}
+                onActiveSheetChange={state.setActiveSheetIndex}
                 selectedMaterialId={state.selectedMaterialId}
-                onAddStock={state.addStock}
-                onUpdateStock={state.updateStock}
-                onDeleteStock={state.deleteStock}
+                planByInstanceId={planByInstanceId}
+                showCutSequence={state.showCutSequence}
+                onShowCutSequenceChange={state.setShowCutSequence}
+                cutPlanError={state.cutPlanError}
               />
-
-              {/* Solver Status & Cut Diagrams */}
-              {state.result && (
-                <>
-                  <SummaryCard
-                    result={state.result}
-                    parts={state.parts}
-                    materials={state.materials}
-                    stock={state.stock}
-                  />
-
-                  <UnplacedAlert
-                    unplacedParts={state.result.unplacedParts}
-                    parts={state.parts}
-                    stock={state.stock}
-                    config={state.config}
-                    displayUnit={state.displayUnit}
-                    fractionDenominator={fracDenom}
-                  />
-
-                  <LayoutViewer
-                    layouts={resolvedLayouts}
-                    projectName={state.activeProjectName}
-                    parts={state.parts}
-                    config={state.config}
-                    displayUnit={state.displayUnit}
-                    fractionDenominator={fracDenom}
-                    hoveredPartId={state.hoveredPartId}
-                    onHoverPart={state.setHoveredPartId}
-                    activeSheetIndex={state.activeSheetIndex}
-                    onActiveSheetChange={state.setActiveSheetIndex}
-                    selectedMaterialId={state.selectedMaterialId}
-                    planByInstanceId={planByInstanceId}
-                    showCutSequence={state.showCutSequence}
-                    onShowCutSequenceChange={state.setShowCutSequence}
-                    cutPlanError={state.cutPlanError}
-                  />
-                </>
-              )}
-            </div>
-          </div>
+            </>
+          )}
         </main>
+
+        <Footer />
       </div>
 
       <ImportDialog

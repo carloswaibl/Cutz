@@ -317,13 +317,20 @@ export function PartTable({
           isDragOver ? 'ring-2 ring-amber-500/60 bg-amber-500/5' : ''
         }`}
       >
-        <table className="w-full text-left border-collapse">
+        {/*
+          `min-w` so the columns scroll rather than crush. Under auto table
+          layout a `w-` on a cell is only a hint, and a squeezed column clips
+          its input's value: `11-3/4"` rendering as `11-3/` is a dimension a
+          woodworker can misread straight into a wrong cut. The wrapper above
+          is already `overflow-x-auto`, so scrolling is the graceful failure.
+        */}
+        <table className="w-full min-w-[42rem] text-left border-collapse">
           <thead>
             <tr className="border-b border-slate-800 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-              <th className="px-3 py-2">Part Label</th>
+              <th className="px-3 py-2 min-w-[7rem]">Part Label</th>
               <th className="px-3 py-2">Material</th>
-              <th className="px-3 py-2 w-32">Width</th>
-              <th className="px-3 py-2 w-32">Height</th>
+              <th className="px-3 py-2 w-28 min-w-[5.5rem]">Width</th>
+              <th className="px-3 py-2 w-28 min-w-[5.5rem]">Height</th>
               <th className="px-3 py-2 w-20 text-center">Qty</th>
               <th className="px-3 py-2 text-center">Grain Lock</th>
               <th className="px-3 py-2 text-right">Actions</th>

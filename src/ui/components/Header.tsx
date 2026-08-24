@@ -45,7 +45,7 @@ export function Header({
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-bold tracking-tight text-slate-100">Cutz</h1>
               <span className="px-2 py-0.5 text-xs font-semibold uppercase tracking-wider bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-full">
-                v0.1
+                v{__APP_VERSION__}
               </span>
             </div>
             <p className="text-xs text-slate-400">

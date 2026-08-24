@@ -8,6 +8,38 @@
       name="description"
       content="A free, browser-based cut list optimizer for woodworkers. Runs entirely on your machine."
     />
+
+    <!-- Relative, because vite.config.ts sets `base: './'` so the same build
+         works under the GitHub Pages subpath or opened straight from disk. -->
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+
+    <!-- Link previews. Unlike the icons above these must be absolute URLs:
+         scrapers fetch the tags out of context and do not resolve relative
+         paths against the page they came from. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Cutz" />
+    <meta property="og:title" content="Cutz - Cut List Optimizer" />
+    <meta
+      property="og:description"
+      content="A free, browser-based cut list optimizer for woodworkers. Runs entirely on your machine."
+    />
+    <meta property="og:url" content="https://carloswaibl.github.io/Cutz/" />
+    <meta property="og:image" content="https://carloswaibl.github.io/Cutz/og-card.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="The Cutz cut list optimizer showing a bookshelf's parts packed onto a plywood sheet."
+    />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Cutz - Cut List Optimizer" />
+    <meta
+      name="twitter:description"
+      content="A free, browser-based cut list optimizer for woodworkers. Runs entirely on your machine."
+    />
+    <meta name="twitter:image" content="https://carloswaibl.github.io/Cutz/og-card.png" />
   </head>
   <body>
     <div id="root"></div>

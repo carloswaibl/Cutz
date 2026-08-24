@@ -9,10 +9,13 @@ interface NewProjectPromptProps {
  * deleted - nothing is assumed or silently preloaded. The same choice
  * (`plan-m6.md` §4) `ProjectMenu`'s "New Project" section offers, at full
  * screen size since there is nothing else to show yet.
+ *
+ * `flex-1`, not `min-h-screen`: `App` owns the full-height shell here so the
+ * footer can sit below this without being pushed off a screen-tall block.
  */
 export function NewProjectPrompt({ onCreateProject }: NewProjectPromptProps) {
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center gap-8 p-6 font-sans">
+    <div className="flex-1 flex flex-col items-center justify-center gap-8 p-6">
       <div className="text-center">
         <h1 className="text-2xl font-bold tracking-tight text-slate-100">Cutz</h1>
         <p className="text-sm text-slate-400 mt-1">
