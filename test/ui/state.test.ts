@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { buildCutPlans } from '../../src/domain/cutplan';
 import { solve } from '../../src/solver/index';
-import { BOOKSHELF_PRESET, PRESETS } from '../../src/ui/state/presets';
+import { BOOKSHELF_PRESET, DRAWER_BOXES_PRESET, PRESETS } from '../../src/ui/state/presets';
+import type { AppState } from '../../src/ui/state/types';
+import { cutListReducer } from '../../src/ui/state/useCutListState';
 
 describe('UI State Presets & Domain Integration', () => {
   it('has valid preset projects that solve without errors', () => {
@@ -64,5 +66,61 @@ describe('Cut plans behind the app state', () => {
         config: preset.config,
       }),
     ).toThrow(/stock entry that is not in the project/);
+  });
+});
+
+describe('LOAD_PROJECT', () => {
+  const state: AppState = {
+    displayUnit: 'imperial-fraction',
+    fractionDenominator: 16,
+    materials: BOOKSHELF_PRESET.materials,
+    parts: BOOKSHELF_PRESET.parts,
+    stock: BOOKSHELF_PRESET.stock,
+    config: BOOKSHELF_PRESET.config,
+    activeSheetIndex: 2,
+    hoveredPartId: 'p-side',
+    selectedMaterialId: 'mat-ply-34',
+    showCutSequence: true,
+  };
+
+  it('replaces the seven persisted fields with the loaded project', () => {
+    const next = cutListReducer(state, {
+      type: 'LOAD_PROJECT',
+      project: {
+        displayUnit: 'metric-mm',
+        fractionDenominator: 1,
+        materials: DRAWER_BOXES_PRESET.materials,
+        parts: DRAWER_BOXES_PRESET.parts,
+        stock: DRAWER_BOXES_PRESET.stock,
+        config: DRAWER_BOXES_PRESET.config,
+        showCutSequence: false,
+      },
+    });
+
+    expect(next.displayUnit).toBe('metric-mm');
+    expect(next.materials).toBe(DRAWER_BOXES_PRESET.materials);
+    expect(next.parts).toBe(DRAWER_BOXES_PRESET.parts);
+    expect(next.stock).toBe(DRAWER_BOXES_PRESET.stock);
+    expect(next.config).toBe(DRAWER_BOXES_PRESET.config);
+    expect(next.showCutSequence).toBe(false);
+  });
+
+  it('resets transient UI state so a freshly loaded project starts clean', () => {
+    const next = cutListReducer(state, {
+      type: 'LOAD_PROJECT',
+      project: {
+        displayUnit: 'imperial-fraction',
+        fractionDenominator: 16,
+        materials: DRAWER_BOXES_PRESET.materials,
+        parts: DRAWER_BOXES_PRESET.parts,
+        stock: DRAWER_BOXES_PRESET.stock,
+        config: DRAWER_BOXES_PRESET.config,
+        showCutSequence: true,
+      },
+    });
+
+    expect(next.activeSheetIndex).toBe(0);
+    expect(next.hoveredPartId).toBeNull();
+    expect(next.selectedMaterialId).toBe('all');
   });
 });

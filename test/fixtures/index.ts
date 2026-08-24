@@ -11,10 +11,15 @@
  * while this one guards data we wrote ourselves and a stack trace is the most
  * useful thing it can produce.
  *
- * Fixtures are JSON rather than TypeScript modules so M6 can reuse them as
- * onboarding example projects, and they are parsed as `unknown` rather than
- * imported through `resolveJsonModule` so the validation below is real rather
- * than TypeScript inferring a shape nobody checked.
+ * Fixtures are JSON rather than TypeScript modules, and are parsed as
+ * `unknown` rather than imported through `resolveJsonModule` so the
+ * validation below is real rather than TypeScript inferring a shape nobody
+ * checked. They are solver-benchmark-only: `bookshelf.json` and
+ * `BOOKSHELF_PRESET` (`src/ui/state/presets.ts`) have since diverged in ids,
+ * quantities, and unit conventions (fixtures are metric-native for
+ * `test/bench`; presets are entered against the UI's imperial-fraction
+ * defaults), so `presets.ts` is the example/starter content M6's project
+ * templates use, not this directory - see `docs/plan-m6.md` §2.
  */
 
 import { readdirSync, readFileSync } from 'node:fs';

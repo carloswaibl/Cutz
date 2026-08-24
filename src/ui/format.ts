@@ -41,3 +41,26 @@ export function formatDisplayLength(
   });
   return `${value}${unitSuffix(displayUnit)}`;
 }
+
+const MINUTE_MS = 60_000;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
+const WEEK_MS = 7 * DAY_MS;
+
+/**
+ * A timestamp as "2 hours ago" for the project switcher's last-modified
+ * column. Falls back to a plain date past a week, where "N weeks ago" stops
+ * being a useful estimate for a woodworker deciding which project to open.
+ */
+export function formatRelativeTime(ms: number, now: number = Date.now()): string {
+  const delta = Math.max(0, now - ms);
+  if (delta < MINUTE_MS) return 'just now';
+  if (delta < HOUR_MS) return pluralize(Math.floor(delta / MINUTE_MS), 'minute');
+  if (delta < DAY_MS) return pluralize(Math.floor(delta / HOUR_MS), 'hour');
+  if (delta < WEEK_MS) return pluralize(Math.floor(delta / DAY_MS), 'day');
+  return new Date(ms).toLocaleDateString();
+}
+
+function pluralize(count: number, unit: string): string {
+  return `${count} ${unit}${count === 1 ? '' : 's'} ago`;
+}

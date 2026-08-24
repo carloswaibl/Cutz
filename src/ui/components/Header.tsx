@@ -1,13 +1,20 @@
 import type { SolverEffort } from '../../domain/types';
-import { PRESETS } from '../state/presets';
+import type { ProjectSummary } from '../../storage/types';
 import type { DisplayUnit } from '../state/types';
+import { ProjectMenu } from './ProjectMenu';
 
 interface HeaderProps {
   displayUnit: DisplayUnit;
   effort?: SolverEffort | undefined;
   onUnitChange: (unit: DisplayUnit) => void;
   onEffortChange: (effort: SolverEffort) => void;
-  onLoadPreset: (presetKey: string) => void;
+  activeProjectId: string | null;
+  activeProjectName: string;
+  projects: ProjectSummary[];
+  onSwitchProject: (id: string) => void;
+  onRenameProject: (id: string, name: string) => void;
+  onCreateProject: (fromTemplate?: string, name?: string) => void;
+  onDeleteProject: (id: string) => void;
   /** Disabled until there is something to print. */
   canPrint: boolean;
 }
@@ -17,7 +24,13 @@ export function Header({
   effort = 'balanced',
   onUnitChange,
   onEffortChange,
-  onLoadPreset,
+  activeProjectId,
+  activeProjectName,
+  projects,
+  onSwitchProject,
+  onRenameProject,
+  onCreateProject,
+  onDeleteProject,
   canPrint,
 }: HeaderProps) {
   return (
@@ -47,24 +60,16 @@ export function Header({
             button lands under the controls rather than orphaned on the far left
             beneath the logo. */}
         <div className="flex flex-wrap items-center justify-end gap-3">
-          {/* Preset Selector */}
-          <div className="flex items-center gap-1.5 bg-slate-950/60 p-1 rounded-lg border border-slate-800">
-            <label htmlFor="preset-select" className="text-xs font-medium text-slate-400 px-2">
-              Sample Project:
-            </label>
-            <select
-              id="preset-select"
-              defaultValue="bookshelf"
-              onChange={(e) => onLoadPreset(e.target.value)}
-              className="bg-slate-900 text-slate-200 text-xs font-medium rounded-md px-2.5 py-1 border border-slate-700/60 focus:outline-none focus:ring-2 focus:ring-amber-500/50 cursor-pointer"
-            >
-              {Object.entries(PRESETS).map(([key, preset]) => (
-                <option key={key} value={key}>
-                  {preset.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          {/* Project Selector */}
+          <ProjectMenu
+            activeProjectId={activeProjectId}
+            activeProjectName={activeProjectName}
+            projects={projects}
+            onSwitchProject={onSwitchProject}
+            onRenameProject={onRenameProject}
+            onCreateProject={onCreateProject}
+            onDeleteProject={onDeleteProject}
+          />
 
           {/* Unit Toggle Selector */}
           <div className="flex items-center gap-1.5 bg-slate-950/60 p-1 rounded-lg border border-slate-800">
