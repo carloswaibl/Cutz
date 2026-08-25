@@ -48,8 +48,12 @@ export function Header({
                 v{__APP_VERSION__}
               </span>
             </div>
+            {/* Claims only what is true today. The app has no service worker,
+                so a reload with no network does not come back - "offline ready"
+                was overstating it. Client-side is the stronger claim anyway:
+                it is what makes the privacy promise in the footer real. */}
             <p className="text-xs text-slate-400">
-              Browser-based cut list optimizer • 100% client-side & offline ready
+              Browser-based cut list optimizer • 100% client-side - nothing leaves your machine
             </p>
           </div>
         </div>
