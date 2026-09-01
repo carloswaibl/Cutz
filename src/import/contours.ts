@@ -9,13 +9,8 @@
  */
 
 import { containsRect } from '../domain/geometry';
-import {
-  boundsOf,
-  type OrientedBox,
-  type Point,
-  pointInPolygon,
-  polygonArea,
-} from '../domain/polygon';
+import { boundsOf, type OrientedBox, pointInPolygon, polygonArea } from '../domain/polygon';
+import type { Point } from '../domain/types';
 
 /**
  * How far apart a path's ends may be and still count as closed.

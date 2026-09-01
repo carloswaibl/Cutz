@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { placementRect } from '../../../src/domain/geometry';
+import { placementRect } from '../../../src/domain/polygon';
 import type { Part, SolverConfig, Stock } from '../../../src/domain/types';
 import { checkResult } from '../../../src/domain/validate';
 import { SolverInputError } from '../../../src/solver/errors';
@@ -141,7 +141,7 @@ describe('the guillotine solver', () => {
       );
       for (const layout of solve(fixture).layouts) {
         for (const placement of layout.placements) {
-          if (locked.has(placement.partId)) expect(placement.rotated).toBe(false);
+          if (locked.has(placement.partId)) expect(placement.angleDeg).toBe(0);
         }
       }
     }

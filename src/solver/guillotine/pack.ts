@@ -127,7 +127,10 @@ export function greedyPack(
         // The part goes in the top-left corner of the free rectangle it won.
         x: rect.x,
         y: rect.y,
-        rotated: candidate.footprint.rotated,
+        // `Footprint.rotated` stays a boolean inside the packer: it is an
+        // orientation flag over the two footprints a table saw can produce, not
+        // a placement angle. Only what leaves the engine speaks in degrees.
+        angleDeg: candidate.footprint.rotated ? 90 : 0,
       });
       // Multiplied in this order, and accumulated in placement order, so the
       // waste figure below is bit-identical to the one `checkResult` recomputes.

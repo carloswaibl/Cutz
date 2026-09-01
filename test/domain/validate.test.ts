@@ -51,8 +51,20 @@ function sheet(extra: Partial<Stock> = {}): Stock {
 }
 
 function at(partId: string, x: number, y: number, rotated = false): Placement {
-  return { partId, stockInstanceId: 's#0', x, y, rotated };
+  return { partId, stockInstanceId: 's#0', x, y, angleDeg: rotated ? 90 : 0 };
 }
+
+/** A placement at an arbitrary angle, for the orientations only a router reaches. */
+function angled(partId: string, x: number, y: number, angleDeg: number): Placement {
+  return { partId, stockInstanceId: 's#0', x, y, angleDeg };
+}
+
+/**
+ * Nest mode. `checkResult` reads `mode` straight off the config it is given, so
+ * these tests reach nest-mode behaviour without needing a nesting engine to
+ * exist - which is the point: the checker lands before the solver it checks.
+ */
+const NEST_CONFIG: SolverConfig = { ...CONFIG, mode: 'nest' };
 
 /**
  * Assemble a `Result` with correct waste numbers.
@@ -63,11 +75,32 @@ function at(partId: string, x: number, y: number, rotated = false): Placement {
  * instead, so the checker's arithmetic is never validated against a copy of
  * itself.
  */
+/**
+ * The area a part consumes, hand-written rather than imported.
+ *
+ * A saw cuts the bounding box; a router follows the outline. Spelling both out
+ * here keeps the note above true - the checker's arithmetic is never validated
+ * against a copy of itself.
+ */
+function areaOf(part: Part, mode: 'guillotine' | 'nest'): number {
+  if (mode === 'guillotine' || part.outline === undefined) return part.width * part.height;
+  let twice = 0;
+  const ring = part.outline;
+  for (let i = 0; i < ring.length; i += 1) {
+    const a = ring[i];
+    const b = ring[(i + 1) % ring.length];
+    if (!a || !b) continue;
+    twice += a.x * b.y - b.x * a.y;
+  }
+  return Math.abs(twice) / 2;
+}
+
 function resultOf(
   parts: readonly Part[],
   stock: readonly Stock[],
   layouts: readonly { stockInstanceId: string; placements: Placement[] }[],
   unplacedParts: UnplacedPart[] = [],
+  mode: 'guillotine' | 'nest' = 'guillotine',
 ): Result {
   const partsById = new Map(parts.map((p) => [p.id, p]));
   const stockById = new Map(stock.map((s) => [s.id, s]));
@@ -83,7 +116,7 @@ function resultOf(
     for (const placement of layout.placements) {
       const p = partsById.get(placement.partId);
       if (p === undefined) continue;
-      placed += p.width * p.height;
+      placed += areaOf(p, mode);
     }
 
     placedTotal += placed;
@@ -429,6 +462,302 @@ describe('checkResult - invariant 3, rotation legality', () => {
       { stockInstanceId: 's#0', placements: [at('face', 0, 0)] },
     ]);
     expect(checkResult(result, { parts, stock, config: CONFIG }).status).toBe('valid');
+  });
+
+  it('accepts a grain-locked part given a half turn', () => {
+    // 180° leaves the grain running along the same axis, so it is physically
+    // legal where a quarter turn is not - and on an asymmetric outline it is a
+    // real packing win that `rotated: boolean` could never express.
+    const parts = [part('face', 400, 400, { rotationPolicy: 'locked' })];
+    const stock = [sheet()];
+    const result = resultOf(parts, stock, [
+      { stockInstanceId: 's#0', placements: [angled('face', 0, 0, 180)] },
+    ]);
+    expect(checkResult(result, { parts, stock, config: NEST_CONFIG }).status).toBe('valid');
+  });
+
+  it('catches a grain-locked part turned off axis in nest mode', () => {
+    const parts = [part('face', 400, 400, { rotationPolicy: 'locked' })];
+    const stock = [sheet()];
+    const result = resultOf(parts, stock, [
+      { stockInstanceId: 's#0', placements: [angled('face', 100, 100, 45)] },
+    ]);
+    const outcome = checkResult(result, { parts, stock, config: NEST_CONFIG });
+    expect(violationOf(outcome.violations, 'illegal-rotation').angleDeg).toBe(45);
+  });
+
+  it('reads -90 and 270 as the same orientation', () => {
+    // A solver may spell a quarter turn either way. Rejecting one of them would
+    // be a rule about arithmetic rather than about woodworking.
+    const parts = [part('face', 400, 400, { rotationPolicy: 'locked' })];
+    const stock = [sheet()];
+    for (const angleDeg of [-180, 360]) {
+      const result = resultOf(parts, stock, [
+        { stockInstanceId: 's#0', placements: [angled('face', 0, 0, angleDeg)] },
+      ]);
+      expect(checkResult(result, { parts, stock, config: CONFIG }).status).toBe('valid');
+    }
+  });
+});
+
+describe('checkResult - a table saw cannot cut off axis', () => {
+  it('catches a part placed at 45° in guillotine mode', () => {
+    // Not covered by guillotine decomposability: this part's bounding box is
+    // the whole sheet's worth of clean rectangle, and a sheet of such boxes
+    // tiles perfectly while every part on it is uncuttable.
+    const parts = [part('panel', 400, 400)];
+    const stock = [sheet()];
+    const result = resultOf(parts, stock, [
+      { stockInstanceId: 's#0', placements: [angled('panel', 100, 100, 45)] },
+    ]);
+    const outcome = checkResult(result, { parts, stock, config: CONFIG });
+    expect(violationOf(outcome.violations, 'non-quarter-angle').angleDeg).toBe(45);
+    expect(outcome.status).toBe('invalid');
+  });
+
+  it('says nothing about 45° in nest mode, where a router handles it', () => {
+    const parts = [part('panel', 400, 400)];
+    const stock = [sheet()];
+    const result = resultOf(parts, stock, [
+      { stockInstanceId: 's#0', placements: [angled('panel', 100, 100, 45)] },
+    ]);
+    const outcome = checkResult(result, { parts, stock, config: NEST_CONFIG });
+    expect(kinds(outcome.violations)).not.toContain('non-quarter-angle');
+  });
+
+  it('accepts every quarter turn in guillotine mode', () => {
+    const parts = [part('panel', 400, 300)];
+    const stock = [sheet()];
+    for (const angleDeg of [0, 90, 180, 270]) {
+      const result = resultOf(parts, stock, [
+        { stockInstanceId: 's#0', placements: [angled('panel', 0, 0, angleDeg)] },
+      ]);
+      expect(checkResult(result, { parts, stock, config: CONFIG }).status).toBe('valid');
+    }
+  });
+});
+
+// --- Outlines -------------------------------------------------------------
+//
+// The whole compatibility claim of this milestone is that a part carrying its
+// own outline behaves exactly like the same part without one, because
+// `width`/`height` stay the bounding box either way. These are the tests that
+// hold that claim up.
+
+describe('outlines - a rectangle that states the obvious', () => {
+  const boxOutline = (width: number, height: number) => [
+    { x: 0, y: 0 },
+    { x: width, y: 0 },
+    { x: width, y: height },
+    { x: 0, y: height },
+  ];
+
+  it('validates identically to the same part with no outline', () => {
+    const plain = [part('a', 400, 300), part('b', 400, 300)];
+    const shaped = plain.map((p) => ({ ...p, outline: boxOutline(p.width, p.height) }));
+    const stock = [sheet()];
+    const layouts = [
+      { stockInstanceId: 's#0', placements: [at('a', 0, 0), at('b', 403, 0, true)] },
+    ];
+
+    expect(validateInputs(shaped, stock, CONFIG)).toEqual(validateInputs(plain, stock, CONFIG));
+
+    const plainOutcome = checkResult(resultOf(plain, stock, layouts), {
+      parts: plain,
+      stock,
+      config: CONFIG,
+    });
+    const shapedOutcome = checkResult(resultOf(shaped, stock, layouts), {
+      parts: shaped,
+      stock,
+      config: CONFIG,
+    });
+    expect(shapedOutcome).toEqual(plainOutcome);
+    expect(shapedOutcome.status).toBe('valid');
+  });
+
+  it('rejects an outline whose bounds are not the part', () => {
+    // width/height stay the bounding box in M7. An outline that disagrees would
+    // have the packer reading one shape and the renderer drawing another.
+    const parts = [part('a', 400, 300, { outline: boxOutline(400, 500) })];
+    const issues = validateInputs(parts, [sheet()], CONFIG);
+    expect(issueOf(issues, 'outline-bounds-mismatch').partId).toBe('a');
+    expect(hasErrors(issues)).toBe(true);
+  });
+
+  it('rejects an outline that does not start at the top-left corner', () => {
+    const offset = boxOutline(400, 300).map((p) => ({ x: p.x + 10, y: p.y + 10 }));
+    const parts = [part('a', 400, 300, { outline: offset })];
+    expect(kinds(validateInputs(parts, [sheet()], CONFIG))).toContain('outline-bounds-mismatch');
+  });
+
+  it('rejects an outline with too few points', () => {
+    const parts = [
+      part('a', 400, 300, {
+        outline: [
+          { x: 0, y: 0 },
+          { x: 400, y: 300 },
+        ],
+      }),
+    ];
+    const issues = validateInputs(parts, [sheet()], CONFIG);
+    expect(issueOf(issues, 'outline-too-few-points').points).toBe(2);
+    expect(hasErrors(issues)).toBe(true);
+  });
+
+  it('warns about an outline that crosses itself without blocking the solve', () => {
+    const bowTie = [
+      { x: 0, y: 0 },
+      { x: 400, y: 300 },
+      { x: 400, y: 0 },
+      { x: 0, y: 300 },
+    ];
+    const parts = [part('a', 400, 300, { outline: bowTie })];
+    const issues = validateInputs(parts, [sheet()], CONFIG);
+    expect(issueOf(issues, 'outline-self-intersecting').severity).toBe('warning');
+    expect(hasErrors(issues)).toBe(false);
+  });
+
+  it('reports one issue per bad part, not a cascade', () => {
+    const parts = [
+      part('good', 400, 300),
+      part('bad', 400, 300, { outline: boxOutline(400, 500) }),
+    ];
+    const issues = validateInputs(parts, [sheet()], CONFIG);
+    expect(kinds(issues)).toEqual(['outline-bounds-mismatch']);
+  });
+});
+
+describe('checkResult - nest mode', () => {
+  // An L, 400 x 400 overall with the bottom-right quarter bitten out. Two of
+  // them interlock: turn one a half turn and its bite receives the other's arm.
+  const L = [
+    { x: 0, y: 0 },
+    { x: 400, y: 0 },
+    { x: 400, y: 200 },
+    { x: 200, y: 200 },
+    { x: 200, y: 400 },
+    { x: 0, y: 400 },
+  ];
+  const shaped = (id: string) => part(id, 400, 400, { outline: L });
+
+  it('does not ask whether a nested layout is guillotine-decomposable', () => {
+    // The pinwheel: four parts turned around a centre, no overlaps anywhere and
+    // no valid edge-to-edge cut. Invalid on a table saw, fine on a router - and
+    // running invariant 4 in nest mode would fail every layout the nester makes.
+    const parts = [
+      part('a', 400, 300),
+      part('b', 300, 400),
+      part('c', 400, 300),
+      part('d', 300, 400),
+    ];
+    const stock = [sheet()];
+    const layouts = [
+      {
+        stockInstanceId: 's#0',
+        placements: [at('a', 0, 0), at('b', 403, 0), at('c', 303, 403), at('d', 0, 303)],
+      },
+    ];
+
+    expect(
+      kinds(
+        checkResult(resultOf(parts, stock, layouts), { parts, stock, config: CONFIG }).violations,
+      ),
+    ).toContain('not-guillotine-decomposable');
+    expect(
+      kinds(
+        checkResult(resultOf(parts, stock, layouts), { parts, stock, config: NEST_CONFIG })
+          .violations,
+      ),
+    ).not.toContain('not-guillotine-decomposable');
+  });
+
+  it('catches two outlines that overlap even though their boxes clear', () => {
+    // Placed 210 apart in x, so both bounding boxes still overlap by 190 - but
+    // the point is that the check now runs on the real shapes, and these two do
+    // collide: the second L's tall arm lands inside the first's.
+    const parts = [shaped('a'), shaped('b')];
+    const stock = [sheet()];
+    const result = resultOf(
+      parts,
+      stock,
+      [{ stockInstanceId: 's#0', placements: [at('a', 0, 0), at('b', 100, 100)] }],
+      [],
+      'nest',
+    );
+    const outcome = checkResult(result, { parts, stock, config: NEST_CONFIG });
+    expect(violationOf(outcome.violations, 'kerf-separation').clearance).toBeLessThan(0);
+  });
+
+  it('accepts two outlines nested into each other beyond the kerf', () => {
+    // The second L given a half turn tucks its arm into the first's bite. Their
+    // bounding boxes overlap heavily; their outlines clear by more than the
+    // blade. This is the packing a bounding-box solver cannot find, and the
+    // reason the checker had to learn about polygons.
+    const parts = [shaped('a'), shaped('b')];
+    const stock = [sheet()];
+    const nestResult = resultOf(
+      parts,
+      stock,
+      [{ stockInstanceId: 's#0', placements: [at('a', 0, 0), angled('b', 204, 204, 180)] }],
+      [],
+      'nest',
+    );
+    const outcome = checkResult(nestResult, { parts, stock, config: NEST_CONFIG });
+    expect(outcome.status).toBe('valid');
+
+    // The same pair is nonsense on a table saw, and guillotine mode says so -
+    // there the parts are their boxes, and the boxes are on top of each other.
+    const sawnResult = resultOf(parts, stock, [
+      { stockInstanceId: 's#0', placements: [at('a', 0, 0), angled('b', 204, 204, 180)] },
+    ]);
+    expect(kinds(checkResult(sawnResult, { parts, stock, config: CONFIG }).violations)).toContain(
+      'kerf-separation',
+    );
+  });
+
+  it('measures waste from the outline in nest mode and the box in guillotine mode', () => {
+    // The L covers 400*400 - 200*200 = 120000mm² of a 1000x1000 sheet, against
+    // the 160000mm² its bounding box costs on a saw.
+    const parts = [shaped('a')];
+    const stock = [sheet()];
+    const placements = [at('a', 0, 0)];
+
+    const nested: Result = {
+      layouts: [{ stockInstanceId: 's#0', placements, wastePct: 1 - 120000 / 1000000 }],
+      unplacedParts: [],
+      totalWastePct: 1 - 120000 / 1000000,
+    };
+    expect(checkResult(nested, { parts, stock, config: NEST_CONFIG }).status).toBe('valid');
+
+    const sawn: Result = {
+      layouts: [{ stockInstanceId: 's#0', placements, wastePct: 1 - 160000 / 1000000 }],
+      unplacedParts: [],
+      totalWastePct: 1 - 160000 / 1000000,
+    };
+    expect(checkResult(sawn, { parts, stock, config: CONFIG }).status).toBe('valid');
+
+    // And each rejects the other's number, so the two are genuinely distinct.
+    expect(kinds(checkResult(sawn, { parts, stock, config: NEST_CONFIG }).violations)).toContain(
+      'layout-waste-mismatch',
+    );
+  });
+});
+
+describe('validateInputs - nest mode is not available yet', () => {
+  it('refuses a nest-mode config with an error', () => {
+    // Accepting it would produce a guillotine layout while `checkResult` quietly
+    // stopped asking whether that layout is cuttable. Deleted when the engine
+    // lands.
+    const issues = validateInputs([part('a', 400, 300)], [sheet()], NEST_CONFIG);
+    expect(issueOf(issues, 'unsupported-solver-mode').mode).toBe('nest');
+    expect(hasErrors(issues)).toBe(true);
+  });
+
+  it('says nothing for the default and the explicit guillotine mode', () => {
+    const parts = [part('a', 400, 300)];
+    expect(validateInputs(parts, [sheet()], CONFIG)).toEqual([]);
+    expect(validateInputs(parts, [sheet()], { ...CONFIG, mode: 'guillotine' })).toEqual([]);
   });
 });
 
@@ -783,12 +1112,12 @@ describe('checkResult - waste arithmetic', () => {
       layouts: [
         {
           stockInstanceId: 'full#0',
-          placements: [{ partId: 'a', stockInstanceId: 'full#0', x: 0, y: 0, rotated: false }],
+          placements: [{ partId: 'a', stockInstanceId: 'full#0', x: 0, y: 0, angleDeg: 0 }],
           wastePct: 1 - 160000 / 1000000,
         },
         {
           stockInstanceId: 'half#0',
-          placements: [{ partId: 'b', stockInstanceId: 'half#0', x: 0, y: 0, rotated: false }],
+          placements: [{ partId: 'b', stockInstanceId: 'half#0', x: 0, y: 0, angleDeg: 0 }],
           wastePct: 1 - 160000 / 500000,
         },
       ],

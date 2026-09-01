@@ -13,8 +13,9 @@
 
 import { describe, expect, it } from 'vitest';
 import { buildCutPlan, type CutPlan } from '../../src/domain/cutplan';
-import { placementRect, type Rect, usableArea } from '../../src/domain/geometry';
+import { type Rect, usableArea } from '../../src/domain/geometry';
 import { parseStockInstanceId } from '../../src/domain/instances';
+import { placementRect } from '../../src/domain/polygon';
 import type { Layout, Material, Part, SolverConfig, Stock } from '../../src/domain/types';
 import { DXF_LAYERS, renderSheetDxf, sheetToDxf } from '../../src/export/dxf';
 import { solve } from '../../src/solver';

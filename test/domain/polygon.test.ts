@@ -3,8 +3,12 @@ import { clearance } from '../../src/domain/geometry';
 import {
   boundsOf,
   convexHull,
+  isSelfIntersecting,
   minAreaBox,
-  type Point,
+  partOutline,
+  placedArea,
+  placementPolygon,
+  placementRect,
   pointInPolygon,
   polygonArea,
   polygonInRect,
@@ -14,6 +18,7 @@ import {
   simplify,
   translatePolygon,
 } from '../../src/domain/polygon';
+import type { Part, Placement, Point } from '../../src/domain/types';
 
 const p = (x: number, y: number): Point => ({ x, y });
 
@@ -360,6 +365,162 @@ describe('polygonInRect', () => {
     // Nudged past the corner it no longer fits, so the pass above is a real fit
     // rather than a rectangle that was never tight.
     expect(polygonInRect(translatePolygon(diagonal, 2, 0), usable)).toBe(false);
+  });
+});
+
+// --- Model adapters -------------------------------------------------------
+
+function part(overrides: Partial<Part> = {}): Part {
+  return {
+    id: 'p',
+    label: 'Panel',
+    width: 600,
+    height: 300,
+    qty: 1,
+    materialId: 'ply18',
+    rotationPolicy: 'free90',
+    ...overrides,
+  };
+}
+
+function place(angleDeg: number, x = 0, y = 0): Placement {
+  return { partId: 'p', stockInstanceId: 's#0', x, y, angleDeg };
+}
+
+/**
+ * An L, 600 x 300 overall with a 300 x 150 bite out of the bottom-right. Its
+ * bounding box is exactly the plain part's, so every box-based answer is
+ * identical and only the outline-based ones may differ.
+ */
+const L_SHAPE: Point[] = [p(0, 0), p(600, 0), p(600, 150), p(300, 150), p(300, 300), p(0, 300)];
+
+describe('partOutline', () => {
+  it('gives the bounding box corners when a part has no outline', () => {
+    expect(partOutline(part())).toEqual([p(0, 0), p(600, 0), p(600, 300), p(0, 300)]);
+  });
+
+  it('gives back an outline the part carries', () => {
+    expect(partOutline(part({ outline: L_SHAPE }))).toEqual(L_SHAPE);
+  });
+
+  it('falls back to the box for a ring too small to bound an area', () => {
+    // Two points cannot enclose anything. `validateInputs` reports it, but this
+    // must still hand its caller a usable polygon rather than a degenerate one -
+    // no call site branches on the optional field, which is the whole point.
+    expect(partOutline(part({ outline: [p(0, 0), p(600, 300)] }))).toHaveLength(4);
+  });
+});
+
+describe('placementPolygon', () => {
+  it.each([0, 90, 180, 270, 45, -90, 450])(
+    "lands the turned shape's bounds on the placement at %i°",
+    (angleDeg) => {
+      const bounds = boundsOf(
+        placementPolygon(part({ outline: L_SHAPE }), place(angleDeg, 40, 25)),
+      );
+      expect(bounds.x).toBeCloseTo(40, 9);
+      expect(bounds.y).toBeCloseTo(25, 9);
+    },
+  );
+
+  it('turns clockwise, matching the sign convention of the rest of the file', () => {
+    // The L's bite is the bottom-right quarter at 0°: x 300..600, y 150..300.
+    // A quarter turn clockwise in y-down coordinates sends (x, y) to (-y, x),
+    // and re-anchoring the bounds puts the bite at x 0..150, y 300..600 - the
+    // bottom-left of a part now 300 wide and 600 tall. Pinned because a sign
+    // flip here would be invisible in a bounding box and wrong in every
+    // renderer.
+    const turned = placementPolygon(part({ outline: L_SHAPE }), place(90));
+    expect(boundsOf(turned)).toMatchObject({ width: 300, height: 600 });
+    expect(pointInPolygon(p(75, 450), turned)).toBe(false);
+    expect(pointInPolygon(p(225, 450), turned)).toBe(true);
+    expect(pointInPolygon(p(75, 150), turned)).toBe(true);
+  });
+
+  it('keeps the part area through any turn', () => {
+    const shaped = part({ outline: L_SHAPE });
+    for (const angle of [0, 37, 90, 180, 270]) {
+      expect(polygonArea(placementPolygon(shaped, place(angle)))).toBeCloseTo(
+        polygonArea(L_SHAPE),
+        6,
+      );
+    }
+  });
+});
+
+describe('placementRect', () => {
+  // The pre-M7 implementation, verbatim. `rotated: true` was the only thing a
+  // placement could say, so these two rows are the entire space of layouts the
+  // guillotine packer can produce - and they must not have moved.
+  const preM7 = (piece: Part, rotated: boolean, x: number, y: number) => ({
+    x,
+    y,
+    width: rotated ? piece.height : piece.width,
+    height: rotated ? piece.width : piece.height,
+  });
+
+  it.each([
+    [0, false],
+    [90, true],
+  ])('matches the pre-M7 width/height swap at %i°', (angleDeg, rotated) => {
+    const piece = part();
+    const rect = placementRect(piece, place(angleDeg, 120, 45));
+    const expected = preM7(piece, rotated, 120, 45);
+    expect(rect.x).toBeCloseTo(expected.x, 9);
+    expect(rect.y).toBeCloseTo(expected.y, 9);
+    expect(rect.width).toBeCloseTo(expected.width, 9);
+    expect(rect.height).toBeCloseTo(expected.height, 9);
+  });
+
+  it('reports the bounding box of a shape turned off axis', () => {
+    // A 600 x 300 part at 45° needs a bigger box than either of its own sides.
+    const rect = placementRect(part(), place(45, 10, 10));
+    expect(rect.width).toBeCloseTo(Math.SQRT1_2 * 900, 6);
+    expect(rect.height).toBeCloseTo(Math.SQRT1_2 * 900, 6);
+    expect(rect.x).toBeCloseTo(10, 9);
+  });
+
+  it('is unchanged by an outline, because width/height stay the bounding box', () => {
+    expect(placementRect(part({ outline: L_SHAPE }), place(90, 5, 5))).toEqual(
+      placementRect(part(), place(90, 5, 5)),
+    );
+  });
+});
+
+describe('placedArea', () => {
+  it('is the bounding box in guillotine mode, whatever shape the part is', () => {
+    // A table saw cuts a rectangle: the material inside the box is gone either
+    // way, so the L costs exactly what the plain panel costs.
+    expect(placedArea(part({ outline: L_SHAPE }), 'guillotine')).toBe(600 * 300);
+    expect(placedArea(part(), 'guillotine')).toBe(600 * 300);
+  });
+
+  it('is the outline in nest mode', () => {
+    // 600x300 less the 300x150 bite.
+    expect(placedArea(part({ outline: L_SHAPE }), 'nest')).toBeCloseTo(600 * 300 - 300 * 150, 6);
+  });
+
+  it('agrees between modes for a part that is its own box', () => {
+    expect(placedArea(part(), 'nest')).toBeCloseTo(placedArea(part(), 'guillotine'), 6);
+  });
+});
+
+describe('isSelfIntersecting', () => {
+  it('accepts a rectangle and a concave but clean outline', () => {
+    expect(isSelfIntersecting([p(0, 0), p(600, 0), p(600, 300), p(0, 300)])).toBe(false);
+    expect(isSelfIntersecting(L_SHAPE)).toBe(false);
+  });
+
+  it('catches a bow tie', () => {
+    expect(isSelfIntersecting([p(0, 0), p(600, 300), p(600, 0), p(0, 300)])).toBe(true);
+  });
+
+  it('accepts a ring whose only shared point is a vertex', () => {
+    // Two lobes pinched at the origin. Only proper crossings count - this backs
+    // a warning, and missing a degenerate shape costs a message, not a layout.
+    expect(
+      isSelfIntersecting([p(0, 0), p(300, -100), p(600, 0), p(300, 100), p(0, 0), p(-300, 100)]),
+    ).toBe(false);
   });
 });
 

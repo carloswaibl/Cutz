@@ -161,7 +161,7 @@ function buildRows(
         rows.set(part.id, row);
       }
       row.qty += 1;
-      if (placement.rotated) row.rotatedCount += 1;
+      if (placement.angleDeg !== 0) row.rotatedCount += 1;
 
       const pieceId = pieceByPlacement.get(placementKey(placement));
       if (pieceId !== undefined) row.pieceIds.push(pieceId);

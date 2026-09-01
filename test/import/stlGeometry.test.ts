@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { minAreaBox, type Point } from '../../src/domain/polygon';
+import { minAreaBox } from '../../src/domain/polygon';
+import type { Point } from '../../src/domain/types';
 import { type Contour, nestContours } from '../../src/import/contours';
 import {
   checkManifold,

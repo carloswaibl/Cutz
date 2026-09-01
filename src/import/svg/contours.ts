@@ -15,7 +15,8 @@
  */
 
 import { approxEq } from '../../domain/geometry';
-import { minAreaBox, type Point } from '../../domain/polygon';
+import { minAreaBox } from '../../domain/polygon';
+import type { Point } from '../../domain/types';
 import { CLOSE_GAP_TOLERANCE_MM, type Contour } from '../contours';
 import { isDegenerate } from '../geometry';
 import type { Subpath } from './flatten';

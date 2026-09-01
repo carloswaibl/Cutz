@@ -31,7 +31,8 @@
  */
 
 import type { CutPlan } from '../domain/cutplan';
-import { placementRect, type Rect, usableArea } from '../domain/geometry';
+import { type Rect, usableArea } from '../domain/geometry';
+import { placementRect } from '../domain/polygon';
 import type { Layout, Material, Part, Placement, SolverConfig, Stock } from '../domain/types';
 import { formatLength } from '../domain/units';
 import { toFormatUnit } from '../ui/format';
@@ -384,7 +385,7 @@ function partLabels(
   // The diagram marks rotation with '↻'. R12 is an ANSI-era format with no
   // reliable encoding declaration, so anything outside ASCII is a good way to
   // get mojibake in an old viewer - the marker spells itself out here.
-  const label = placement.rotated ? `${part.label} (R)` : part.label;
+  const label = placement.angleDeg !== 0 ? `${part.label} (R)` : part.label;
 
   // Laid out as the SVG does: label above centre, dimensions below it. Sheet Y
   // grows downwards, so the smaller Y is the upper line before the flip.

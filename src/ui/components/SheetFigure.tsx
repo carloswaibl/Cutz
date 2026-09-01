@@ -24,8 +24,9 @@
 
 import { type CSSProperties, useMemo } from 'react';
 import type { CutPlan, CutStep } from '../../domain/cutplan';
-import { placementRect, type Rect, usableArea } from '../../domain/geometry';
+import { type Rect, usableArea } from '../../domain/geometry';
 import { parseStockInstanceId } from '../../domain/instances';
+import { placementRect } from '../../domain/polygon';
 import type { Layout, Material, Part, Placement, SolverConfig, Stock } from '../../domain/types';
 import { formatLength } from '../../domain/units';
 import { toFormatUnit } from '../format';
@@ -282,7 +283,7 @@ function PlacedPartRect({
           style={{ pointerEvents: 'none', userSelect: 'none' }}
         >
           {part.label}
-          {placement.rotated ? ' ↻' : ''}
+          {placement.angleDeg !== 0 ? ' ↻' : ''}
         </text>
       )}
 

@@ -19,7 +19,7 @@
  */
 
 import { type SVGCommand, SVGPathData } from 'svg-pathdata';
-import type { Point } from '../../domain/polygon';
+import type { Point } from '../../domain/types';
 import type { Matrix } from './transform';
 
 /**
