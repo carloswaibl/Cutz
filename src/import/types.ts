@@ -21,6 +21,7 @@
 // Type-only, and cyclic with `errors.ts` by design: this file owns the shapes,
 // that one owns the words. Both erase at compile time, so there is no cycle at
 // runtime and no bundler edge to worry about.
+import type { Point } from '../domain/types';
 import type { ImportError } from './errors';
 
 // --- Scale ----------------------------------------------------------------
@@ -85,6 +86,20 @@ export interface ImportedPart {
    * user can see the oriented box did the right thing; not stored on the Part.
    */
   angle: number;
+  /**
+   * The shape's real polygon, in the coordinates `Part.outline` is defined in:
+   * part-local millimetres, origin at the bounding box's top-left, square to
+   * that box however the shape was drawn.
+   *
+   * Absent exactly when the shape *is* its own bounding box, which a drawing of
+   * rectangular panels means for every row. `partOutline()` synthesises the
+   * corners in that case, so nothing downstream branches on this being here.
+   *
+   * `width`/`height` stay the bounding box either way. That is what keeps the
+   * guillotine path, both renderers and both exporters reading the same numbers
+   * they always read - `docs/plan-m7.md` §1 criterion 1.
+   */
+  outline?: readonly Point[];
   flags: PartFlag[];
   /** Source element ids behind this row, for the preview's "3 shapes" affordance. */
   sourceIds: string[];

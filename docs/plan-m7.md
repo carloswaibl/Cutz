@@ -442,14 +442,75 @@ Exact scope may shift as each PR's own "what shipped" notes get added here.
   across all eight fixtures**, which is a stronger check than the ratchet itself, since that only
   asserts `<=`. No browser pass - nothing user-visible changes until PR 8.
 
-### PR 4 - `feat/import-outlines` - stop discarding the polygon
+### PR 4 - `feat/import-outlines` - stop discarding the polygon - **shipped**
 
 - Retain `contour.points` through both importers per §1 criterion 2, simplified and
   normalised to bounding-box-local coordinates.
 - `ImportedPart` gains the outline; `ImportDialog.handleCommit` carries it onto `Part`.
-- Import preview draws the real shape.
+- ~~Import preview draws the real shape.~~ **Moved to PR 8** - see the first note below.
 - Tests against the existing `test/files/` corpus: an imported outline's bounds equal the
   reported width/height; quantity grouping still keys on box dimensions only.
+
+**What shipped, and what changed on the way.**
+
+- **The preview outline moved to PR 8, resolving a contradiction this document was carrying.**
+  §5's preamble promises PRs 2-5 are pure refactors with no user-visible change; §4 lists "the
+  import preview outline" under PR 8; the bullet above claimed it for PR 4. The preview is a
+  text table today, so this was a new component plus a rewrite of the dialog's "What can I
+  import?" copy, which currently tells the user outlines are discarded. Confirmed with the
+  project owner: it lands in PR 8, where the machine selector and the guillotine-with-outlines
+  note can say what the shape actually means. Showing a true outline in a build that still cuts
+  every part as a rectangle, with nothing on screen saying so, is the silent downgrade §4 exists
+  to prevent.
+- **`fitPolygonToBox` is the load-bearing addition, and it is in `domain/polygon.ts`.** §5
+  described this PR as threading a polygon through, which undersells the one hard constraint:
+  `outline-bounds-mismatch` is an **error**, checked with `approxEq`, and one stale outline
+  blocks solving for every material at once. Three unrelated things push a ring a few hundredths
+  off its box - float drift through the un-rotation, `simplify` shaving a vertex that happened
+  to be extreme, and `groupRows` reporting `maxWidth`/`maxHeight` beside the first member's
+  shape. One function absorbs all three, so no caller reasons about which it is exposed to.
+- **Un-rotating by `-box.angle` is what makes the outline part-local, and it is the step that
+  keeps rectangles rectangles.** `minAreaBox` folds its angle into `[0, 90)` and swaps the
+  extents to follow, so `-angle` lands the box on the axes in both the swapped and unswapped
+  cases. Without it, `nested-transforms.svg`'s rectangle drawn at 30° would store a four-point
+  ring spanning a box larger than the part - a shape the user never drew, on the most ordinary
+  input there is.
+- **A shape that is its own bounding box stores no outline at all.** `isBoxOutline` is checked
+  *after* the refit, so a rectangle that arrived 0.3mm under its group still stores nothing. All
+  three real SVG corpus files and every hand-entered part come out with `outline: undefined`,
+  which is what keeps an imported panel structurally identical to a typed one and keeps
+  `Part.outline` meaning "this part is not a rectangle".
+- **`UPDATE_PART` had to be fixed in the same PR, because this PR is what creates the hazard.**
+  The reducer was a plain `{ ...p, ...action.part }` spread. The moment imported parts carry
+  outlines, a user retyping an imported part's width strands one - and is then shown a hard
+  error about a polygon they have never seen and cannot edit. The outline now stretches to the
+  new box via the same `fitPolygonToBox`, which is what dragging a handle does in any drawing
+  program. Dropping it instead would turn the part silently back into a rectangle, which is a
+  change a woodworker discovers at the router. Verified in the browser, not only in tests.
+- **Winding is normalised to clockwise.** `partOutline()` already documented its return as
+  clockwise and the corners it synthesises for an outline-less part are, but an SVG path may be
+  drawn either way and a mirroring transform flips it - so the promise held by luck. Now it
+  holds by construction.
+- **`simplify` at 0.1mm converges on a vertex count set by the geometry, not the exporter.** A
+  150mm-radius circle comes back at 128 points whether the file sampled it at 240 or 2000. That
+  makes it a normalisation rather than a compression, and it matters for grouping: the same part
+  exported twice at different flattening settings must still collapse into a quantity of two. It
+  is also why the tolerance sits an order of magnitude below `GROUP_TOLERANCE_MM`.
+- **A sheared rectangle now keeps the parallelogram it actually is.** The `sheared` flag has
+  always said "this box is strictly larger than the shape"; until now the shape itself was
+  thrown away. It survives as a four-point outline, so a router can follow it even though the
+  flag still stands for a saw. An unlooked-for win, pinned by a test.
+- **Both importers' existing "produces parts that pass domain validation" tests were the right
+  place for the contract, and only needed the outline carried across** exactly as
+  `handleCommit` does. That makes `outline-bounds-mismatch` itself the assertion, over the whole
+  `test/files/` corpus, rather than a hand-written bounds comparison that could drift from what
+  the validator actually enforces.
+- Verified: `typecheck`, `test:run` (915 passing, up from 880), `lint` and `build` clean, and
+  `npm run bench` diffed against a run on `main` - **all eight baselines identical** in sheets,
+  waste and unplaced. Plus a browser pass, which §5 does not require for this PR but which was
+  the only cover for `ImportDialog.handleCommit`: an STL imported through the real dialog stores
+  a 31-point outline whose bounds are exactly the part's reported size, round-tripped through
+  IndexedDB, and retyping its width refits the outline onto the new box with no error raised.
 
 ### PR 5 - `feat/solver-registry` - the seam
 

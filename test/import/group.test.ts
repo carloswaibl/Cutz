@@ -1,6 +1,8 @@
 /** Quantities - §5.6. Pure, so it runs in the default node environment. */
 
 import { describe, expect, it } from 'vitest';
+import { boundsOf } from '../../src/domain/polygon';
+import type { Point } from '../../src/domain/types';
 import {
   GROUP_TOLERANCE_MM,
   groupRows,
@@ -8,10 +10,26 @@ import {
   SPREAD_FLAG_MM,
 } from '../../src/import/group';
 
+/** The four corners a plain rectangle measures as, clockwise from the origin. */
+function boxOutline(width: number, height: number): Point[] {
+  return [
+    { x: 0, y: 0 },
+    { x: width, y: 0 },
+    { x: width, y: height },
+    { x: 0, y: height },
+  ];
+}
+
 let counter = 0;
-function row(width: number, height: number, label = 'Shelf', sheared = false): ShapeRow {
+function row(
+  width: number,
+  height: number,
+  label = 'Shelf',
+  sheared = false,
+  outline: Point[] = boxOutline(width, height),
+): ShapeRow {
   counter += 1;
-  return { label, box: { width, height, angle: 0 }, sourceId: `s${counter}`, sheared };
+  return { label, box: { width, height, angle: 0 }, outline, sourceId: `s${counter}`, sheared };
 }
 
 describe('groupRows', () => {
@@ -120,5 +138,65 @@ describe('groupRows', () => {
 
   it('returns nothing for nothing', () => {
     expect(groupRows([])).toEqual({ parts: [], warnings: [] });
+  });
+});
+
+describe('groupRows and outlines', () => {
+  const lShape = (width: number, height: number): Point[] => [
+    { x: 0, y: 0 },
+    { x: width, y: 0 },
+    { x: width, y: height / 2 },
+    { x: width / 2, y: height / 2 },
+    { x: width / 2, y: height },
+    { x: 0, y: height },
+  ];
+
+  it('stores no outline for a shape that is its own bounding box', () => {
+    // A drawing of rectangular panels - the overwhelmingly common case - stores
+    // no geometry at all, so an imported panel is structurally identical to a
+    // typed one and `partOutline()` synthesises the same four corners for both.
+    const { parts } = groupRows([row(800, 250)]);
+    expect(parts[0]?.outline).toBeUndefined();
+  });
+
+  it('carries a genuinely irregular shape through', () => {
+    const { parts } = groupRows([row(600, 300, 'Bracket', false, lShape(600, 300))]);
+    expect(parts[0]?.outline).toEqual(lShape(600, 300));
+  });
+
+  it('takes the first member outline, like the label and the angle beside it', () => {
+    const { parts } = groupRows([
+      row(600, 300, 'Bracket', false, lShape(600, 300)),
+      row(600, 300, 'rect12', false, [
+        { x: 0, y: 0 },
+        { x: 600, y: 0 },
+        { x: 300, y: 300 },
+      ]),
+    ]);
+    expect(parts[0]?.qty).toBe(2);
+    expect(parts[0]?.outline).toHaveLength(6);
+  });
+
+  it('refits the kept outline onto the dimensions the row reports', () => {
+    // The row reports the per-axis maximum across its members, and the first
+    // member may be up to the grouping tolerance under it. An outline whose
+    // bounds disagree with the part's width and height is a hard validation
+    // error, so the two cannot be allowed to drift apart here.
+    const { parts } = groupRows([
+      row(600, 300, 'Bracket', false, lShape(600, 300)),
+      row(600.3, 300.2, 'Bracket', false, lShape(600.3, 300.2)),
+    ]);
+    const part = parts[0];
+    expect(part?.width).toBe(600.3);
+    expect(part?.height).toBe(300.2);
+    expect(boundsOf(part?.outline ?? [])).toEqual({ x: 0, y: 0, width: 600.3, height: 300.2 });
+  });
+
+  it('drops an outline that refitting turns back into a plain box', () => {
+    // Refitting happens before the box test, not after, so a rectangle that
+    // arrived 0.3mm short of its group still stores nothing.
+    const { parts } = groupRows([row(800, 250), row(800.3, 250)]);
+    expect(parts[0]?.width).toBe(800.3);
+    expect(parts[0]?.outline).toBeUndefined();
   });
 });

@@ -9,7 +9,7 @@
  * so there is exactly one path, unlike SVG's several (§4.7).
  */
 
-import { minAreaBox, type OrientedBox } from '../../domain/polygon';
+import { minAreaBox } from '../../domain/polygon';
 import { type Contour, nestContours } from '../contours';
 import {
   fileTooLarge,
@@ -21,6 +21,7 @@ import {
 } from '../errors';
 import { isDegenerate } from '../geometry';
 import { groupRows, type ShapeRow } from '../group';
+import { partLocalOutline } from '../outline';
 import type { ImportOutcome, ImportWarning } from '../types';
 import { componentLabel } from './label';
 import {
@@ -149,7 +150,7 @@ export function importStl(
 
   const warnings: ImportWarning[] = [];
   let discardedHoles = 0;
-  const accepted: { box: OrientedBox; sourceId: string }[] = [];
+  const accepted: { contour: Contour; sourceId: string }[] = [];
   const thicknessMm: Record<string, number> = {};
 
   components.forEach((component, index) => {
@@ -174,7 +175,7 @@ export function importStl(
 
     nested.outers.forEach((outer, outerIndex) => {
       const sourceId = `${filename}#${index}${nested.outers.length > 1 ? `-${outerIndex}` : ''}`;
-      accepted.push({ box: outer.box, sourceId });
+      accepted.push({ contour: outer, sourceId });
       thicknessMm[sourceId] = slab.thickness;
     });
   });
@@ -183,7 +184,8 @@ export function importStl(
 
   const rows: ShapeRow[] = accepted.map((entry, i) => ({
     label: componentLabel(filename, i, accepted.length),
-    box: entry.box,
+    box: entry.contour.box,
+    outline: partLocalOutline(entry.contour),
     sourceId: entry.sourceId,
     // Nothing in mesh projection produces a parallelogram the way an SVG
     // shear does (`docs/plan-m5.md` §3.2) - STL rows are never sheared.

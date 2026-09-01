@@ -32,6 +32,7 @@ import {
   unsupportedElement,
 } from '../errors';
 import { groupRows, type ShapeRow } from '../group';
+import { partLocalOutline } from '../outline';
 import type { ImportOutcome, ImportWarning } from '../types';
 import { classifySubpath } from './contours';
 import { parseSvgDocument } from './document';
@@ -298,6 +299,7 @@ function collectShape(
       // output, and one name across all of them would be a table of duplicates.
       label: outers.length > 1 ? `${base} ${i + 1}` : base,
       box: contour.box,
+      outline: partLocalOutline(contour),
       sourceId: el.getAttribute('id') || `${el.localName}@${rows.length + 1}`,
       sheared,
     });

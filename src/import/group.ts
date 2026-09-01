@@ -13,8 +13,10 @@
  */
 
 import { EPSILON } from '../domain/geometry';
-import type { OrientedBox } from '../domain/polygon';
+import { fitPolygonToBox, type OrientedBox } from '../domain/polygon';
+import type { Point } from '../domain/types';
 import { sizeSpread } from './errors';
+import { isBoxOutline } from './outline';
 import type { ImportedPart, ImportWarning, PartFlag } from './types';
 
 /**
@@ -42,6 +44,13 @@ export const SPREAD_FLAG_MM = 0.2;
 export interface ShapeRow {
   label: string;
   box: OrientedBox;
+  /**
+   * The shape's real polygon, part-local and square to `box`, from
+   * `partLocalOutline`. Always present here even for a plain rectangle - the
+   * decision to *store* one is made once, in `groupRows`, after grouping has
+   * settled what the part's dimensions actually are.
+   */
+  outline: Point[];
   /** The source element's id, or a synthesised stand-in when it had none. */
   sourceId: string;
   sheared: boolean;
@@ -62,6 +71,16 @@ interface Group {
   maxHeight: number;
   label: string;
   angle: number;
+  /**
+   * The first member's shape, like `label` and `angle` beside it.
+   *
+   * Members of a group agree on their dimensions to within
+   * `GROUP_TOLERANCE_MM` but say nothing about agreeing on their shape, and
+   * there is no meaningful average of six polygons. The first is the one whose
+   * label and angle the row already reports, so it is the one a user checking
+   * the row against their drawing would look at.
+   */
+  outline: Point[];
   sourceIds: string[];
   sheared: boolean;
   count: number;
@@ -109,6 +128,7 @@ export function groupRows(rows: readonly ShapeRow[]): {
         maxHeight: height,
         label: row.label,
         angle: row.box.angle,
+        outline: row.outline,
         sourceIds: [row.sourceId],
         sheared: row.sheared,
         count: 1,
@@ -142,14 +162,28 @@ export function groupRows(rows: readonly ShapeRow[]): {
       largestSpread = Math.max(largestSpread, spread);
     }
 
+    // The maximum in each axis, never the mean. A part that imports smaller
+    // than it was drawn does not fit; a part that imports 0.3mm larger does.
+    const width = group.maxWidth;
+    const height = group.maxHeight;
+
+    // Re-fit rather than trust: the anchor's own shape may be up to
+    // `GROUP_TOLERANCE_MM` under the maximum the row reports, and an outline
+    // whose bounds disagree with the part's dimensions is a hard validation
+    // error rather than a rounding complaint.
+    const outline = fitPolygonToBox(group.outline, width, height);
+
     return {
       label: group.label,
-      // The maximum in each axis, never the mean. A part that imports smaller
-      // than it was drawn does not fit; a part that imports 0.3mm larger does.
-      width: group.maxWidth,
-      height: group.maxHeight,
+      width,
+      height,
       qty: group.count,
       angle: group.angle,
+      // A shape that is its own bounding box carries no outline: `partOutline()`
+      // synthesises exactly those four corners, so storing them would make an
+      // imported rectangle structurally different from a typed one for no
+      // difference a user could observe.
+      ...(isBoxOutline(outline, width, height) ? {} : { outline }),
       flags,
       sourceIds: group.sourceIds,
     };
