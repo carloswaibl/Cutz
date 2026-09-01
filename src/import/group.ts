@@ -13,8 +13,8 @@
  */
 
 import { EPSILON } from '../domain/geometry';
+import type { OrientedBox } from '../domain/polygon';
 import { sizeSpread } from './errors';
-import type { OrientedBox } from './geometry';
 import type { ImportedPart, ImportWarning, PartFlag } from './types';
 
 /**

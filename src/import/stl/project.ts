@@ -11,7 +11,7 @@
  */
 
 import { Vector3 } from 'three';
-import type { Point } from '../geometry';
+import type { Point } from '../../domain/polygon';
 import { edgeKey, triangleEdges, type WeldedMesh } from './mesh';
 
 function vertexAt(mesh: WeldedMesh, index: number): Vector3 {

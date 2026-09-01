@@ -9,6 +9,7 @@
  * so there is exactly one path, unlike SVG's several (§4.7).
  */
 
+import { minAreaBox, type OrientedBox } from '../../domain/polygon';
 import { type Contour, nestContours } from '../contours';
 import {
   fileTooLarge,
@@ -18,7 +19,7 @@ import {
   notASlab,
   notStl,
 } from '../errors';
-import { isDegenerate, minAreaBox, type OrientedBox } from '../geometry';
+import { isDegenerate } from '../geometry';
 import { groupRows, type ShapeRow } from '../group';
 import type { ImportOutcome, ImportWarning } from '../types';
 import { componentLabel } from './label';

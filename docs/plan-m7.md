@@ -148,8 +148,10 @@ src/ui/
 `src/domain/polygon.ts` is where the geometry has to live, not `src/import/geometry.ts`
 where it currently sits: `biome.json` bars `src/solver/**` from importing `**/import/**`
 ("The file boundaries depend on domain/, never the other way round"), so a solver cannot
-reach `convexHull`, `minAreaBox` or `pointInPolygon` today. `src/import/geometry.ts`
-re-exports the moved symbols, so no importer code changes.
+reach `convexHull`, `minAreaBox` or `pointInPolygon` today. ~~`src/import/geometry.ts`
+re-exports the moved symbols, so no importer code changes.~~ **Shipped without the shim** -
+the importers cut over to `../domain/polygon` directly and `src/import/geometry.ts` keeps only
+the contour-filtering thresholds. See PR 2's note in §5.
 
 The worker wrapper lives in `src/ui/`, never `src/solver/`. `biome.json` denies `window`,
 `document` and friends inside `solver/**`, and the engine must stay headless and testable
@@ -315,13 +317,64 @@ Exact scope may shift as each PR's own "what shipped" notes get added here.
 - `docs/project-plan.md` §9 question 2: reopened for nest mode, recorded in the doc's
   existing style for a resolved-then-revisited question.
 
-### PR 2 - `feat/domain-polygon` - polygon primitives, no behaviour change
+### PR 2 - `feat/domain-polygon` - polygon primitives, no behaviour change - **shipped**
 
 - `src/domain/polygon.ts` per §3.2; `src/import/geometry.ts` re-exports the moved symbols.
 - Tests for the new primitives, especially `polygonSeparation` (touching, overlapping,
   nested, and disjoint pairs) and `simplify` (a flattened arc keeps its shape within
   tolerance).
 - Nothing else changes. The importers keep passing untouched tests through the re-export.
+
+**What shipped, and what changed on the way.**
+
+- **No re-export shim; the six importers cut over to `../domain/polygon` directly.** §3.1
+  proposed re-exporting the moved symbols from `src/import/geometry.ts` to keep the importer
+  diff at zero. Cutting over instead costs six import lines and leaves exactly one home per
+  symbol rather than two names for each. `src/import/geometry.ts` now holds only what was
+  never geometry: `MIN_CONTOUR_AREA_MM2`, `MIN_CONTOUR_EXTENT_MM` and `isDegenerate` - a
+  policy about what counts as a *part*, which is an importer's question and nobody else's.
+  `ANGLE_SNAP_DEGREES` moved with `minAreaBox`, its only caller.
+- **`polygonSeparation` samples edge midpoints, not just vertices, and this is load-bearing.**
+  The first implementation detected overlap from strictly-interior vertices plus properly
+  crossing edge pairs. Both miss the single most common overlap on a cut sheet: two
+  rectangles in adjacent columns, sharing flush top and bottom edges. No vertex of either is
+  strictly inside the other, and no edge pair *properly* crosses because every candidate pair
+  meets at a collinear endpoint - so the pair reported as comfortably disjoint. Caught by the
+  new tests before anything depended on it. Sampling each edge's midpoint as well fixes both
+  the detection and the magnitude, and `test/domain/polygon.test.ts` pins the flush-band case
+  with the reason.
+- **Containment is decided by a metric margin, not by `pointInPolygon` alone.** A sample
+  landing exactly on the other ring's boundary is a coin flip under the even-odd rule, and
+  that is precisely what happens when two parts are butted edge to edge. A sample counts as
+  intruding only when its distance to the other boundary exceeds `EPSILON`, so touching reads
+  as touching regardless of which way the parity test falls.
+- **`polygonSeparation` is Euclidean where `clearance(Rect)` is axis-of-separation, and the
+  divergence is deliberate.** `clearance` takes the *larger* of the two axis gaps, because a
+  guillotine separation is made by one edge-to-edge saw cut and a cut has an axis - two parts
+  in different columns need no vertical gap at all. A router bit has no axis of separation, so
+  the real gap between two nested parts is the diagonal one. For two rectangles offset 3mm in
+  x and 4mm in y, `clearance` is 4 and `polygonSeparation` is 5. Both are right for their own
+  machine, which is why §3.4 keeps the rectangle fast path rather than replacing it. Pinned by
+  a test that asserts the divergence on purpose, so nobody later "reconciles" them.
+- **The overlap magnitude is documented as a lower bound on penetration depth, and only the
+  sign is contractual.** Exact penetration depth for concave polygons needs convex
+  decomposition - the rabbit hole §7 decision 2 already declined for NFP. Where the bound is
+  loose the pair reports a gap near zero rather than a negative one, which degrades the
+  *message* a user reads and never the invariant: a near-zero gap is still below any real kerf
+  and still fails the check.
+- **`simplify` cuts the ring at two anchors rather than treating vertex 0 as an endpoint.**
+  Douglas-Peucker pins its endpoints, so running it on a closed ring as though the first
+  stored vertex were an endpoint shaves the shape asymmetrically around whichever vertex
+  happened to be stored first - and two copies of one part, stored starting from different
+  vertices, would simplify differently and stop grouping into a quantity. Cutting at vertex 0
+  and the vertex farthest from it makes the result independent of where the ring starts, which
+  a test pins.
+- **`partOutline`/`placementPolygon`/`placedArea` are not here.** §3.1 lists them in
+  `polygon.ts` and §5 assigns them to PR 3; they read `Part.outline` and `Placement.angleDeg`,
+  which PR 3 introduces. §5 is the one that governs.
+- Verified: `typecheck`, `test:run` (840 passing), `lint` and `build` clean, and `npm run
+  bench` reporting the eight existing baselines unmoved. No browser pass - nothing
+  user-visible changes until PR 8.
 
 ### PR 3 - `feat/domain-outlines` - model and validator, no user-visible change
 
