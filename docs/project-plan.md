@@ -41,10 +41,12 @@ A web app that takes a set of parts — entered manually, or imported from SVG o
 - **Mesh/STL:** `three` + `STLLoader` for parsing and plane math
 - **SVG parsing:** `svg-pathdata` or `paper.js` for path → polygon flattening
 - **Rendering:** emit SVG directly from React — this gives you SVG export for free
-- **DXF export:** `dxf-writer`, or hand-roll it (POLYLINE entities are simple)
+- **DXF export:** hand-rolled in `src/export/dxf.ts` — R12 POLYLINE entities are simple enough
+  that `dxf-writer` was not worth the bundle weight (resolved in M3)
 - **Print:** browser print CSS with `@page` rules. No PDF library needed in v1.
 - **Storage:** IndexedDB via `idb`
-- **Hosting:** Cloudflare Pages or GitHub Pages
+- **Hosting:** GitHub Pages. `.github/workflows/ci.yml` deploys the exact `dist/` that CI
+  verified, on every merge to `main`.
 
 **Why not a Python backend:** your instinct will be to reach for one given your background, but it costs money to run, breaks offline use, and adds cold-start latency to what should feel instant. Nothing here needs a server.
 
@@ -129,10 +131,15 @@ Prove the two scary things work before committing. Throwaway code.
 - **Exit:** import an STL panel and get a correct part
 
 ### M6 — Polish and launch
-- Project save/load via IndexedDB
-- Onboarding example project
-- Landing page, README, license
-- Post to r/woodworking, r/hobbycnc, Lumberjocks
+- Project save/load via IndexedDB — shipped as a full multi-project library (create, rename,
+  switch, delete), not a single autosave slot. `docs/plan-m6.md` §7 decision 1.
+- Onboarding example project — the three existing presets, offered as templates to start a real
+  saved project from, plus a "no projects yet" empty state instead of a silently preloaded demo
+- ~~Landing page~~, README, license — **no landing page.** No router, no marketing route, no pitch
+  above the fold: the app still boots straight into the tool and a footer carries the repo link,
+  the license and the version. `docs/plan-m6.md` §7 decision 2.
+- Post to r/woodworking, r/hobbycnc, Lumberjocks — **still outstanding.** The one manual,
+  non-code step; deliberately never an exit criterion, since no PR or test can verify it.
 
 ### V2 backlog
 CNC free-form nesting · 1D linear stock · offcut inventory · G-code · cut sequence optimization for a single operator · multi-sheet cost minimization
@@ -162,13 +169,20 @@ CNC free-form nesting · 1D linear stock · offcut inventory · G-code · cut se
 
 ## 9. Open questions
 
-1. **Imperial or metric first?** US hobbyist market is imperial and fractional (23-1/4"). Fractional input parsing is a small but real feature.
+1. ~~**Imperial or metric first?**~~ **Resolved — shipped.** Imperial first: a new project opens
+   in `imperial-fraction` at a 1/16" denominator (`src/ui/state/projectStore.ts`), and
+   `domain/units.ts` parses `23-1/4`, `23 1/4` and `23.25` alike. Metric is a display mode, not a
+   second code path — everything internal is millimetres regardless. Recorded here in M6 because
+   this is the default a v1 visitor actually meets.
 2. ~~**Do parts import as bounding boxes or true outlines?**~~ **Resolved in M4 - shipped.**
    Bounding boxes. `docs/plan-m4.md` §2: for a guillotine saw the part *is* its bounding box,
    because every cut runs edge to edge - outline fidelity only matters for free-form nesting,
    which is v2 and lives behind the `Solver` interface. Interior cutouts import as discarded
    holes, reported by a counted warning, not modelled.
-3. **How much of the sheet is usable?** Factory edges on plywood are often not square — does the app assume a default trim allowance?
+3. ~~**How much of the sheet is usable?**~~ **Resolved — shipped.** Yes, there is a default: 1/4"
+   (6.35mm) trimmed off all four sides, set in `src/ui/state/projectStore.ts` and in every preset,
+   and editable per project in the config bar. A default rather than a prompt, because a
+   woodworker who does not know what edge trim is still wants a layout that cuts.
 4. ~~**Cut sequence output?**~~ **Resolved in M3 — shipped.** `domain/cutplan.ts` derives a full
    guillotine cut order from each solved layout: every cut labelled rip or crosscut against the
    sheet's grain axis, with its fence setting and the piece it consumes, ordered depth-first so the

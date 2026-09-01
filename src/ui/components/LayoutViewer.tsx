@@ -220,172 +220,197 @@ export function LayoutViewer({
         })}
       </div>
 
-      {/* Viewer Container */}
-      <div className="relative bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden min-h-[500px]">
-        <TransformWrapper
-          initialScale={1}
-          minScale={0.1}
-          maxScale={10}
-          centerOnInit
-          wheel={{ step: 0.01 }}
-          pinch={{ step: 1 }}
-        >
-          {({ zoomIn, zoomOut, resetTransform }) => (
-            <>
-              {/* Controls Overlay */}
-              {/* `items-end` so each cluster is as wide as its own contents -
-                  a stretched flex column would pad the zoom buttons out to the
-                  width of the export rows below them. */}
-              <div className="absolute top-4 right-4 z-10 flex flex-col items-end gap-2">
-                <div className="flex bg-slate-950/80 backdrop-blur-sm border border-slate-700 rounded-lg shadow-lg overflow-hidden">
-                  <button
-                    type="button"
-                    onClick={() => zoomIn()}
-                    className="p-2 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors border-r border-slate-700"
-                    title="Zoom In"
-                  >
-                    <svg
-                      aria-hidden="true"
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="20"
-                      height="20"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <circle cx="11" cy="11" r="8" />
-                      <line x1="21" x2="16.65" y1="21" y2="16.65" />
-                      <line x1="11" x2="11" y1="8" y2="14" />
-                      <line x1="8" x2="14" y1="11" y2="11" />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => zoomOut()}
-                    className="p-2 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors border-r border-slate-700"
-                    title="Zoom Out"
-                  >
-                    <svg
-                      aria-hidden="true"
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="20"
-                      height="20"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <circle cx="11" cy="11" r="8" />
-                      <line x1="21" x2="16.65" y1="21" y2="16.65" />
-                      <line x1="8" x2="14" y1="11" y2="11" />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => resetTransform()}
-                    className="p-2 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
-                    title="Reset View"
-                  >
-                    <svg
-                      aria-hidden="true"
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="20"
-                      height="20"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                      <path d="M3 3v5h5" />
-                    </svg>
-                  </button>
-                </div>
+      {/*
+        Diagram and cut sequence.
 
-                {/* Cut sequence toggle.
-                    One switch for the diagram, the printed pages and both
-                    export formats: a file that shows different cuts from the
-                    screen it was exported from is worse than no file. */}
+        Stacked on anything narrower than `xl`, side by side above it. The
+        diagram is bound by height, not width (see the pan/zoom comment below),
+        so once the results went full width in a `max-w-7xl` page there was
+        roughly half the row sitting empty beside a portrait sheet. The cut
+        sequence is the one thing an operator reads next to the diagram, so it
+        gets that space rather than nothing.
+
+        `items-start` so a short plan's panel does not stretch to the diagram's
+        height, and `minmax(0,...)` on both tracks so neither the pan/zoom
+        canvas nor the step table can push the grid wider than its container.
+      */}
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] items-start gap-4">
+        <div className="flex flex-col gap-3">
+          {/* Sheet actions. Not floating over the canvas - see the zoom
+              cluster's comment below. `flex-wrap` because the three clusters
+              want ~530px and this column is narrower than that on a laptop. */}
+          <div className="flex flex-wrap items-start gap-2">
+            {/* Cut sequence toggle.
+                One switch for the diagram, the printed pages and both export
+                formats: a file that shows different cuts from the screen it was
+                exported from is worse than no file. The panel's own `<summary>`
+                is the second control on this same state. */}
+            <button
+              type="button"
+              onClick={() => onShowCutSequenceChange(!showCutSequence)}
+              disabled={activePlan === null}
+              aria-pressed={showCutSequence}
+              title={
+                activePlan === null
+                  ? 'No cut plan for this sheet'
+                  : 'Show the derived cut order on the diagram, in exports, and in print'
+              }
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                showCutSequence && activePlan !== null
+                  ? 'bg-amber-500/15 border-amber-500/50 text-amber-300'
+                  : 'bg-slate-900/60 border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white'
+              }`}
+            >
+              <CutLinesIcon />
+              Cut sequence
+            </button>
+
+            {/* Export cluster: one row per format */}
+            {EXPORT_FORMATS.map((format) => (
+              <div
+                key={format.id}
+                className="flex items-stretch bg-slate-900/60 border border-slate-800 rounded-lg overflow-hidden text-xs"
+              >
+                <span className="flex items-center px-2.5 font-semibold tracking-wide text-slate-500 select-none">
+                  {format.label}
+                </span>
                 <button
                   type="button"
-                  onClick={() => onShowCutSequenceChange(!showCutSequence)}
-                  disabled={activePlan === null}
-                  aria-pressed={showCutSequence}
-                  title={
-                    activePlan === null
-                      ? 'No cut plan for this sheet'
-                      : 'Show the derived cut order on the diagram, in exports, and in print'
-                  }
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg border shadow-lg backdrop-blur-sm text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-                    showCutSequence && activePlan !== null
-                      ? 'bg-amber-500/15 border-amber-500/50 text-amber-300'
-                      : 'bg-slate-950/80 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white'
-                  }`}
+                  onClick={() => {
+                    void runExport(async () => {
+                      downloadFile(await exportFileFor(format.id, activeLayout, safeIndex));
+                    });
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-2 border-l border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+                  title={format.hint}
                 >
-                  <CutLinesIcon />
-                  Cut sequence
+                  <DownloadIcon />
+                  This sheet
                 </button>
+                {/* With one sheet, "all sheets" is the same action. */}
+                {filteredLayouts.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void runExport(async () => {
+                        await downloadFiles(
+                          await Promise.all(
+                            filteredLayouts.map((entry, index) =>
+                              exportFileFor(format.id, entry, index),
+                            ),
+                          ),
+                        );
+                      });
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-2 border-l border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+                    title="One file per sheet. Your browser will ask permission to download multiple files."
+                  >
+                    <DownloadIcon />
+                    All {filteredLayouts.length}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
 
-                {/* Export cluster: one row per format */}
-                <div className="flex flex-col bg-slate-950/80 backdrop-blur-sm border border-slate-700 rounded-lg shadow-lg overflow-hidden text-xs">
-                  {EXPORT_FORMATS.map((format, rowIndex) => (
-                    <div
-                      key={format.id}
-                      className={`flex items-stretch ${
-                        rowIndex > 0 ? 'border-t border-slate-700' : ''
-                      }`}
-                    >
-                      <span className="flex items-center px-2.5 font-semibold tracking-wide text-slate-500 select-none">
-                        {format.label}
-                      </span>
+          {/* Viewer Container */}
+          <div className="relative bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden min-h-[500px]">
+            <TransformWrapper
+              initialScale={1}
+              minScale={0.1}
+              maxScale={10}
+              centerOnInit
+              wheel={{ step: 0.01 }}
+              pinch={{ step: 1 }}
+            >
+              {({ zoomIn, zoomOut, resetTransform }) => (
+                <>
+                  {/* Zoom controls, and only these, float over the canvas.
+
+                    A floating cluster is the right idiom for pan/zoom, but it
+                    has to be small enough to sit in the margin beside the
+                    sheet: the sheet is height-bound and centred, so on a 5'x5'
+                    panel there is barely any margin at all. The cut-sequence
+                    toggle and the export rows used to live here too, 222px of
+                    opaque panel that covered the sheet's right-hand parts -
+                    the cut diagram is the thing this tool produces, so nothing
+                    that wide gets to sit on top of it. They are a toolbar
+                    above the canvas now. */}
+                  <div className="absolute top-4 right-4 z-10">
+                    <div className="flex bg-slate-950/80 backdrop-blur-sm border border-slate-700 rounded-lg shadow-lg overflow-hidden">
                       <button
                         type="button"
-                        onClick={() => {
-                          void runExport(async () => {
-                            downloadFile(await exportFileFor(format.id, activeLayout, safeIndex));
-                          });
-                        }}
-                        className="flex items-center gap-1.5 px-3 py-2 border-l border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
-                        title={format.hint}
+                        onClick={() => zoomIn()}
+                        className="p-2 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors border-r border-slate-700"
+                        title="Zoom In"
                       >
-                        <DownloadIcon />
-                        This sheet
-                      </button>
-                      {/* With one sheet, "all sheets" is the same action. */}
-                      {filteredLayouts.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            void runExport(async () => {
-                              await downloadFiles(
-                                await Promise.all(
-                                  filteredLayouts.map((entry, index) =>
-                                    exportFileFor(format.id, entry, index),
-                                  ),
-                                ),
-                              );
-                            });
-                          }}
-                          className="flex items-center gap-1.5 px-3 py-2 border-l border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
-                          title="One file per sheet. Your browser will ask permission to download multiple files."
+                        <svg
+                          aria-hidden="true"
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="20"
+                          height="20"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
                         >
-                          <DownloadIcon />
-                          All {filteredLayouts.length}
-                        </button>
-                      )}
+                          <circle cx="11" cy="11" r="8" />
+                          <line x1="21" x2="16.65" y1="21" y2="16.65" />
+                          <line x1="11" x2="11" y1="8" y2="14" />
+                          <line x1="8" x2="14" y1="11" y2="11" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => zoomOut()}
+                        className="p-2 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors border-r border-slate-700"
+                        title="Zoom Out"
+                      >
+                        <svg
+                          aria-hidden="true"
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="20"
+                          height="20"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <circle cx="11" cy="11" r="8" />
+                          <line x1="21" x2="16.65" y1="21" y2="16.65" />
+                          <line x1="8" x2="14" y1="11" y2="11" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => resetTransform()}
+                        className="p-2 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+                        title="Reset View"
+                      >
+                        <svg
+                          aria-hidden="true"
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="20"
+                          height="20"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                          <path d="M3 3v5h5" />
+                        </svg>
+                      </button>
                     </div>
-                  ))}
-                </div>
-              </div>
+                  </div>
 
-              {/*
+                  {/*
                 Pan/Zoom Canvas.
 
                 Height, not width, is what sizes the diagram: sheet goods are
@@ -395,76 +420,93 @@ export function LayoutViewer({
                 container alone just adds empty space either side of the sheet.
                 Capped so it stays a panel on a very tall display, and floored
                 so it does not collapse on a laptop in landscape.
+
+                That same fact is why the cut sequence sits beside this box on
+                a wide screen: the width the diagram cannot use is width the
+                step table can.
               */}
-              <TransformComponent
-                wrapperStyle={{ width: '100%', height: 'clamp(500px, 72vh, 820px)' }}
-                contentStyle={{
-                  width: '100%',
-                  height: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <div
-                  style={{
-                    width: '90%',
-                    height: '90%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <SheetSvg
-                    key={activeLayout.layout.stockInstanceId}
-                    layout={activeLayout.layout}
-                    stock={activeLayout.stock}
-                    parts={parts}
-                    material={activeLayout.material}
-                    config={config}
-                    displayUnit={displayUnit}
-                    fractionDenominator={fractionDenominator}
-                    hoveredPartId={hoveredPartId}
-                    onHoverPart={onHoverPart}
-                    cutPlan={activePlan}
-                    showCutLines={activeOverlay}
-                    showPartNumbers={activeOverlay}
-                  />
-                </div>
-              </TransformComponent>
-            </>
-          )}
-        </TransformWrapper>
-      </div>
-      {/* Cut sequence panel.
-          Below the diagram rather than beside it: the viewer sits in a narrow
-          column, and a five-column step table squeezed in next to a cut diagram
-          would be unreadable in exactly the place precision matters most. */}
-      {activePlan !== null && (
-        <details
-          open={showCutSequence}
-          className="bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden"
-        >
-          <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium text-slate-200 hover:bg-slate-800/40 transition-colors">
-            Cut sequence
-            <span className="ml-2 text-xs font-normal text-slate-500">
-              {activePlan.status === 'complete'
-                ? `${activePlan.steps.length} cuts on sheet ${safeIndex + 1} · a valid order, not reordered for fewest fence changes`
-                : 'unavailable for this sheet'}
-            </span>
-          </summary>
-          <div className="px-4 pb-4">
-            <CutSequenceList
-              plan={activePlan}
-              parts={parts}
-              displayUnit={displayUnit}
-              fractionDenominator={fractionDenominator}
-              variant="screen"
-              showHeading={false}
-            />
+                  <TransformComponent
+                    wrapperStyle={{ width: '100%', height: 'clamp(500px, 72vh, 820px)' }}
+                    contentStyle={{
+                      width: '100%',
+                      height: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: '90%',
+                        height: '90%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <SheetSvg
+                        key={activeLayout.layout.stockInstanceId}
+                        layout={activeLayout.layout}
+                        stock={activeLayout.stock}
+                        parts={parts}
+                        material={activeLayout.material}
+                        config={config}
+                        displayUnit={displayUnit}
+                        fractionDenominator={fractionDenominator}
+                        hoveredPartId={hoveredPartId}
+                        onHoverPart={onHoverPart}
+                        cutPlan={activePlan}
+                        showCutLines={activeOverlay}
+                        showPartNumbers={activeOverlay}
+                      />
+                    </div>
+                  </TransformComponent>
+                </>
+              )}
+            </TransformWrapper>
           </div>
-        </details>
-      )}
+        </div>
+        {/* Cut sequence panel.
+
+          The `<summary>` is a second control on the same state the toolbar
+          button drives, so it has to write back: without `onToggle` the panel
+          would collapse while the diagram kept its cut lines and the next
+          export still carried the overlay, which is exactly the disagreement
+          one shared `showCutSequence` exists to prevent.
+
+          Capped to the diagram's own height above `xl` and scrolled inside
+          itself, so a forty-step plan does not stretch the row past the sheet
+          it belongs to. Below `xl` it is stacked and grows freely. */}
+        {activePlan !== null && (
+          <details
+            open={showCutSequence}
+            onToggle={(e) => onShowCutSequenceChange(e.currentTarget.open)}
+            className="bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden"
+          >
+            <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium text-slate-200 hover:bg-slate-800/40 transition-colors">
+              Cut sequence
+              <span className="ml-2 text-xs font-normal text-slate-500">
+                {activePlan.status === 'complete'
+                  ? `${activePlan.steps.length} cuts on sheet ${safeIndex + 1} · a valid order, not reordered for fewest fence changes`
+                  : 'unavailable for this sheet'}
+              </span>
+            </summary>
+            {/* The scroll lives on the list, not the `<details>`, so the summary
+              stays visible at the top of the panel instead of scrolling away.
+              `2.75rem` is the summary's own height (`py-3` plus its line box). */}
+            <div className="px-4 pb-4 xl:max-h-[calc(clamp(500px,72vh,820px)-2.75rem)] xl:overflow-y-auto">
+              <CutSequenceList
+                plan={activePlan}
+                parts={parts}
+                displayUnit={displayUnit}
+                fractionDenominator={fractionDenominator}
+                variant="screen"
+                showHeading={false}
+              />
+            </div>
+          </details>
+        )}
+      </div>
 
       {cutPlanError && (
         <div className="text-center text-xs text-red-400" role="alert">

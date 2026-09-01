@@ -25,10 +25,15 @@ These were decided deliberately. **Do not violate them without explicit approval
 - **Tailwind CSS v4** — styling and responsive layout grid
 - **three.js** — STL parsing and plane math only, not for rendering
 - **svg-pathdata** — SVG path parsing and curve flattening
-- **idb** — IndexedDB wrapper
-- **dxf-writer** — DXF export
+- **idb** — IndexedDB wrapper, behind `src/storage/`
+- **react-zoom-pan-pinch** — pan/zoom around the on-screen cut diagram
+- DXF export is **hand-rolled** in `src/export/dxf.ts` — no library. R12 is a plain text
+  format and the subset a cut sheet needs is a few hundred lines, which is cheaper than a
+  dependency in a bundle-size-sensitive static app.
 - **Vitest** — unit tests
 - **jsdom** - dev dependency; DOM environment for import tests that exercise `DOMParser`
+- **fake-indexeddb** - dev dependency; in-memory IndexedDB for `src/storage/` tests, because
+  jsdom has no IndexedDB implementation of its own
 - Layouts render as **native SVG from React components**, not canvas. This gives SVG export for free and makes print styling straightforward.
 
 ---
@@ -96,16 +101,22 @@ src/
     download.ts    # Blob + anchor click, sequential with a gap for multi-file
     filename.ts    # sheet filename slugs, kept out of the lazy svg chunk
     print.css
+  storage/         # IndexedDB project persistence; may depend on domain/, never on ui/
+    types.ts       # Project, ProjectSummary
+    db.ts          # idb schema: `projects` + `meta` stores, version 1, open/close per call
+    projects.ts    # list/get/create/update/rename/delete + the active-project id
   ui/              # React components
     format.ts      # display-unit formatting shared by diagram, tables and print
     state/         # reducer, app state, presets
+                   # projectStore.ts - headless persistence logic (no React)
+                   # useProjectStorage.ts - thin hook wrapping it, composed into App
     components/
       print/       # print-only component tree, hidden on screen
       import/      # SVG import dialog, preview, and warnings panel
-  storage/         # IndexedDB project persistence
 test/
   fixtures/        # realistic projects: bookshelf, cabinet carcass, drawer boxes
   files/           # real-world SVG/STL samples from Inkscape, Illustrator, Fusion
+  storage/         # project store round-trips, against fake-indexeddb
 docs/
   project-plan.md  # product roadmap and overall milestone breakdown
   plan-m1.md       # M1 implementation plan, scope, and PR sequence
@@ -113,6 +124,7 @@ docs/
   plan-m3.md       # M3 implementation plan: cut plan, print, SVG/DXF export
   plan-m4.md       # M4 implementation plan: SVG import
   plan-m5.md       # M5 implementation plan: STL import
+  plan-m6.md       # M6 implementation plan: persistence, project library, launch
   solver-design.md # M1 engine design, algorithms, invariants, and benchmarks
 ```
 
@@ -275,7 +287,19 @@ Things that have been decided against, or are easy to get wrong:
 
 ## Current status
 
-Milestone 5 (STL import) is complete. On top of M4's SVG path, a woodworker can now drop a
+Milestone 6 (Polish and launch) is complete, and with it the whole v1 scope in
+`docs/project-plan.md`. Work no longer disappears when the tab closes: the app opens the project
+it had open last, autosaves every edit to IndexedDB behind a debounce, and keeps as many named
+projects as a woodworker wants side by side - create, rename, switch, delete, each isolated from
+the others. A first-ever visitor gets a "no projects yet" prompt offering a blank project or one
+of the three example templates rather than a demo that silently overwrites itself. Exported SVG
+and DXF filenames carry the active project's name. The repo itself is launch-ready: MIT `LICENSE`,
+a hand-written `README.md`, favicon and Open Graph/Twitter tags on `index.html`, and a footer in
+the app carrying the repo link, the license and the version. The only thing left in M6 is the
+manual step of posting it to r/woodworking, r/hobbycnc and Lumberjocks, which is the owner's to
+take and was never a code deliverable.
+
+Milestone 5 (STL import) is also complete. On top of M4's SVG path, a woodworker can drop a
 Fusion 360, SolidWorks or SketchUp `.stl` export onto the parts table alongside or instead of an
 SVG: the importer welds raw triangle soup into an indexed mesh, splits it into connected
 components, checks each for manifold-ness, clusters triangles by normal to find a slab's top and
@@ -287,14 +311,33 @@ the common case (raw units read as millimetres) so confirming it is one glance, 
 number. Detected thickness pre-selects the closest matching material per row. The dropzone now
 accepts multiple files of either format in one drop, merged into one preview list.
 
-Conventions from M3, M4 and M5 that are easy to break:
+Conventions from M3, M4, M5 and M6 that are easy to break:
 
+- **`src/storage/` may depend on `src/domain/`, never on `src/ui/`** - the same one-way rule
+  `plan-m4.md` set for `src/import/`. It is not headless-in-Node (it needs IndexedDB), but its
+  tests run under jsdom with `fake-indexeddb`, never a browser.
+- **Persistence logic that does not need React lives in `src/ui/state/projectStore.ts`;
+  `useProjectStorage.ts` is a thin hook over it.** That split is what lets the whole
+  load/autosave/switch/delete surface be tested with `vi.useFakeTimers()` and no renderer -
+  `@testing-library/react` is deliberately not a dependency. `docs/plan-m6.md` §5 PR 2.
+- **`storage/db.ts` opens and closes a connection per call, deliberately** - not a cached
+  singleton. A held connection blocks `deleteDatabase` in tests and would block a future version
+  bump in a tab the user left open.
+- **Example/starter content is `src/ui/state/presets.ts`. `test/fixtures/*.json` is
+  solver-benchmark-only.** The two have diverged in ids, quantities and unit conventions;
+  fixtures are metric-native for `test/bench`, presets are entered against the UI's
+  imperial-fraction defaults. `docs/plan-m6.md` §7 decision 4 supersedes the older comment in
+  `test/fixtures/index.ts` that anticipated the opposite.
 - **Display units are `imperial-fraction | imperial-decimal | metric-mm`.** Metric is millimetres
   only. `parseLength` still accepts a `cm` suffix on *input*; there is no cm display mode, and
   adding one means moving `unitSystem` and `toFormatUnit` in `export/dxf.ts` together or the DXF
   scales its geometry in one unit and prints its labels in another.
 - **`AppState.showCutSequence` drives four destinations at once** - the screen diagram, the printed
   pages, the SVG export and the DXF export. Read it; do not re-derive an equivalent per call site.
+  It also has **two** on-screen controls that must both write to it: `LayoutViewer`'s toolbar
+  button and the cut-sequence panel's own `<summary>` (via `onToggle`). A `<details open={...}>`
+  without `onToggle` silently desyncs - the panel collapses while the diagram and the next export
+  keep the overlay.
 - **Imported parts are always bounding boxes, never true outlines.** Interior cutouts are
   discarded with a counted warning, not modelled - `docs/project-plan.md` §9 and `docs/plan-m4.md`
   §2 record why. Do not start representing true outlines without revisiting both.
@@ -322,5 +365,7 @@ Conventions from M3, M4 and M5 that are easy to break:
   STL parts can have different measured thicknesses with no single correct default between them.
   `docs/plan-m5.md` §8 decision #10.
 
-The next active milestone is **M6 (Polish and launch)**. See `docs/project-plan.md` for details.
+**There is no active milestone.** v1 is done and deployed. The named v2 candidates -
+free-form/irregular nesting behind the `Solver` interface, offcut tracking, project
+export-as-file - are listed in `docs/project-plan.md`, and none of them is started or scheduled.
 Ask before starting substantial work.

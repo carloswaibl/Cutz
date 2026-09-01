@@ -360,15 +360,84 @@ inside `LayoutViewer`; placing the two side by side on wide screens would fill t
 the one thing a user reads next to the diagram. Not done here to keep this PR from becoming a
 third layout restructure.
 
-### PR 4 - `chore/m6-exit-verification` - close it out
+### PR 4 - `chore/m6-exit-verification` - close it out - **shipped**
 
 - Browser pass per §1 criterion 9: create/reload/switch/delete projects, import
   persisting across reload, exported filenames carrying the project name.
 - `CLAUDE.md`'s "Current status" updated to M6 complete, `src/storage/` filled in in the
   directory listing, `idb` and `fake-indexeddb` added to the Stack section.
 - `docs/project-plan.md` §3's hosting line corrected to state GitHub Pages plainly (§2).
+- The side-by-side diagram/cut-sequence layout PR 3 left for this PR.
 - Record what shipped and what changed on the way, matching M4's and M5's PR4 pattern in
   this same document.
+
+**What shipped, and what changed on the way.**
+
+- **Every exit criterion in §1 verified in Chrome against the dev build**, reading IndexedDB
+  records and DOM directly rather than trusting screenshots. Cleared the database and got the
+  `NewProjectPrompt` empty state with the footer; created the bookshelf template, renamed a
+  part, reloaded, and the edit was there; created a second project from the cabinet-carcass
+  template, renamed it inline to "Shop Cabinets 2026", edited a part in each, and switched back
+  and forth - the two stored records stayed disjoint in parts *and* materials. Imported
+  `inkscape-shelf-unit.svg` and `imagetostl-part-1.stl` in one multi-file selection: 4 parts / 7
+  pieces committed, and after a reload the STL part was still stored at 160.39 x 40.37mm, M5's
+  golden value to the hundredth of a millimetre. Exports produced
+  `cutz-3-unit-bookshelf-sheet-{1,2,3}-3-4-hardwood-plywood.{svg,dxf}`, and after the rename,
+  `cutz-shop-cabinets-2026-sheet-1-3-4-maple-plywood.{svg,dxf}` - criterion 4 closed against a
+  renamed project, not just a template's original name. Deleting the active project fell back to
+  the remaining one untouched; deleting the last returned to the empty state with no console
+  error and with `activeProjectId` cleared rather than left dangling. `window.confirm` was
+  stubbed before the delete steps, since a native modal freezes the automation.
+  `window.print()` was not triggered, the same call M4 and M5 both made.
+- **The deferred layout change: `xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]`.** Because `main` is
+  capped at `max-w-7xl`, this is not a range of sizes - it is exactly two states. At any viewport
+  ≥1280px the row is a fixed 720px diagram beside a 480px sequence panel; below that it stacks,
+  unchanged from what PR 3 shipped. The panel's list (not the `<details>`, so the `<summary>`
+  stays put) scrolls internally at `calc(clamp(500px,72vh,820px)-2.75rem)` so a 40-step plan
+  cannot stretch the row past the sheet it describes. Verified at both states with no clipped
+  table cells and no horizontal document scroll.
+
+**Two defects found while verifying, both fixed here.**
+
+- **`<details open={showCutSequence}>` had no `onToggle`, so clicking the panel's `<summary>`
+  desynced it from the state it appears to control.** The panel collapsed, but the diagram kept
+  its cut lines and the next SVG/DXF export still carried the overlay - and the next unrelated
+  re-render snapped the panel back open. This is the exact failure mode `showCutSequence` exists
+  to prevent, so the `<summary>` now writes back and is documented in `CLAUDE.md` as the second
+  control on that state. Confirmed both directions in the browser, and confirmed the write
+  reaches IndexedDB.
+- **The floating controls overlay covered the cut diagram.** 222px of opaque panel pinned
+  `top-4 right-4`, against a sheet that is height-bound and centred: measured at 29px of overlap
+  onto sheet 1 of the bookshelf. No column ratio fixes this - a 5'x5' Baltic birch panel is
+  square and would be covered far worse - so the cut-sequence toggle and both export rows moved
+  out of the overlay into a `flex-wrap` toolbar above the canvas. Only the 112px zoom cluster
+  still floats, which is the right idiom for pan/zoom and now clears the sheet by 81px. This was
+  pre-existing rather than caused by the new grid, but the grid is what made it visible at the
+  default window size.
+
+**Also updated, beyond what §5 listed.**
+
+- **`CLAUDE.md`'s Stack section claimed `dxf-writer`**, which has never been in `package.json` -
+  the R12 writer is hand-rolled, as the directory listing two sections below already said.
+  Removed, with the reason recorded. `react-zoom-pan-pinch` was missing from the same list since
+  M2 and is now there.
+- **`docs/project-plan.md` §9 questions 1 and 3 marked resolved.** Both were settled by what v1
+  actually shipped rather than by a milestone decision - imperial-fraction at 1/16" as the
+  opening display unit, and a 1/4" edge-trim default - and this is the milestone that closes v1,
+  so they are recorded here the way M4's PR 4 recorded question 2. §3's `dxf-writer`-or-hand-roll
+  line was resolved in the same pass.
+- **`public/og-card.png` and `docs/screenshot.png` re-captured.** PR 3 accepted that these would
+  go stale as the UI changed; this PR is what changed it, so leaving a link preview showing a
+  layout the app no longer has would have been shipping a known-wrong image. Re-shot from the
+  running app and resized with `sips`, same as PR 3. The OG card is cropped to the tabs, toolbar,
+  diagram and cut sequence - the sticky header cannot survive a centred 1200x630 crop without
+  being sliced in half.
+- **The Header's "100% client-side & offline ready" claim was softened**, since there is no
+  service worker and a reload with no network does not come back. Now "100% client-side -
+  nothing leaves your machine", which is both true and the stronger claim. A service worker was
+  considered and declined: it is real new scope M6 never listed, and it needs its own
+  cache-busting story on a static host. Decided with the project owner, along with leaving the
+  version at `0.1.0` rather than bumping it for launch.
 
 ---
 
