@@ -141,8 +141,16 @@ Prove the two scary things work before committing. Throwaway code.
 - Post to r/woodworking, r/hobbycnc, Lumberjocks — **still outstanding.** The one manual,
   non-code step; deliberately never an exit criterion, since no PR or test can verify it.
 
+### M7 - CNC free-form nesting *(active)*
+The first v2 milestone, planned in `docs/plan-m7.md`. Everything before this point treats a part as its bounding box, which is correct for a table saw and wrong for a router.
+- True part outlines retained end to end - the importers already compute the polygon and then discard it
+- `Placement` gains an angle; `SolverConfig` gains a machine mode, guillotine staying the default
+- A raster/bitmask nesting engine behind the existing `Solver` interface, with discrete rotation steps
+- Polygon rendering, SVG/DXF polygon export, and solving moved off the render path
+- **Exit:** an irregular imported part nests at an angle, validates against real polygon geometry, and beats the bounding-box packer by a measured margin on the benchmark set
+
 ### V2 backlog
-CNC free-form nesting · 1D linear stock · offcut inventory · G-code · cut sequence optimization for a single operator · multi-sheet cost minimization
+1D linear stock · offcut inventory · G-code · cut sequence optimization for a single operator · multi-sheet cost minimization · nesting parts inside other parts' interior cutouts
 
 ---
 
@@ -174,11 +182,19 @@ CNC free-form nesting · 1D linear stock · offcut inventory · G-code · cut se
    `domain/units.ts` parses `23-1/4`, `23 1/4` and `23.25` alike. Metric is a display mode, not a
    second code path — everything internal is millimetres regardless. Recorded here in M6 because
    this is the default a v1 visitor actually meets.
-2. ~~**Do parts import as bounding boxes or true outlines?**~~ **Resolved in M4 - shipped.**
-   Bounding boxes. `docs/plan-m4.md` §2: for a guillotine saw the part *is* its bounding box,
-   because every cut runs edge to edge - outline fidelity only matters for free-form nesting,
-   which is v2 and lives behind the `Solver` interface. Interior cutouts import as discarded
-   holes, reported by a counted warning, not modelled.
+2. ~~**Do parts import as bounding boxes or true outlines?**~~ **Resolved in M4 - shipped.
+   Reopened in M7.** Bounding boxes. `docs/plan-m4.md` §2: for a guillotine saw the part *is* its
+   bounding box, because every cut runs edge to edge - outline fidelity only matters for free-form
+   nesting, which is v2 and lives behind the `Solver` interface. Interior cutouts import as
+   discarded holes, reported by a counted warning, not modelled.
+
+   **What M7 changes, and what it does not.** Free-form nesting is no longer hypothetical, so the
+   answer becomes conditional on the machine rather than universal: a part carries an optional true
+   outline, and `width`/`height` remain its bounding box. Guillotine mode still cuts the box - that
+   part of the M4 reasoning was never wrong and does not change. Nest mode packs the outline.
+   `docs/plan-m7.md` §1 criteria 1-2. **Interior cutouts stay discarded**, so parts still do not
+   nest inside other parts' holes; that needs holes modelled on `Part` and understood by the
+   validator, and it sits in the v2 backlog above rather than in M7.
 3. ~~**How much of the sheet is usable?**~~ **Resolved — shipped.** Yes, there is a default: 1/4"
    (6.35mm) trimmed off all four sides, set in `src/ui/state/projectStore.ts` and in every preset,
    and editable per project in the config bar. A default rather than a prompt, because a
