@@ -20,19 +20,29 @@
 
 import { buildCutTree, type CheckStatus, DEFAULT_MAX_GUILLOTINE_STEPS } from './cutplan';
 import {
+  approxEq,
   approxGte,
-  area,
   clearance,
   containsRect,
   EPSILON,
   fits,
   isEmpty,
-  placementRect,
   type Rect,
   usableArea,
 } from './geometry';
 import { parseStockInstanceId } from './instances';
-import type { Part, Placement, Result, SolverConfig, Stock } from './types';
+import {
+  boundsOf,
+  isSelfIntersecting,
+  partOutline,
+  placedArea,
+  placementPolygon,
+  placementRect,
+  polygonInRect,
+  polygonSeparation,
+  rotatePolygon,
+} from './polygon';
+import type { Part, Placement, Point, Result, SolverConfig, SolverMode, Stock } from './types';
 import { formatLength } from './units';
 
 // The search itself lives in `cutplan.ts`, which needs the tree this checker
@@ -82,6 +92,10 @@ export type InputIssue = IssueMeta &
     | { kind: 'no-stock-for-material'; partId: string; materialId: string }
     | { kind: 'part-too-large'; partId: string }
     | { kind: 'part-blocked-by-grain-lock'; partId: string }
+    | { kind: 'outline-too-few-points'; partId: string; points: number }
+    | { kind: 'outline-bounds-mismatch'; partId: string; bounds: Rect }
+    | { kind: 'outline-self-intersecting'; partId: string }
+    | { kind: 'unsupported-solver-mode'; mode: SolverMode }
   );
 
 export function hasErrors(issues: readonly InputIssue[]): boolean {
@@ -96,11 +110,64 @@ function isValidQty(value: number): boolean {
   return Number.isSafeInteger(value) && value >= 1;
 }
 
-/** True when the part fits some usable area in an orientation it is allowed to take. */
-function fitsAnywhere(part: Part, areas: readonly Rect[], allowRotation: boolean): boolean {
-  return areas.some(
-    (r) => fits(part.width, part.height, r) || (allowRotation && fits(part.height, part.width, r)),
-  );
+/**
+ * The mode a config asks for, with the default applied.
+ *
+ * Guillotine is the default and what every project written before M7 opens as,
+ * the same way `improve.ts` resolves an absent `effort` to 'balanced'.
+ */
+export function solverMode(config: SolverConfig): SolverMode {
+  return config.mode ?? 'guillotine';
+}
+
+/** Equally spaced orientations over 360°, with the default step count applied. */
+const DEFAULT_ROTATION_STEPS = 4;
+
+/**
+ * The angles a part may be turned to, in degrees.
+ *
+ * Guillotine has only ever had two: square, or quarter-turned if the grain
+ * allows it. Nesting gets the configured step set - except that a grain-locked
+ * part is restricted to {0, 180} regardless of how many steps were asked for,
+ * because a half turn keeps the grain running along the same axis and every
+ * other step does not. On an asymmetric outline that half turn is a real
+ * packing win, and one `rotated: boolean` could never express.
+ */
+function allowedAngles(part: Part, mode: SolverMode, config: SolverConfig): number[] {
+  if (part.rotationPolicy === 'locked') return mode === 'guillotine' ? [0] : [0, 180];
+  if (mode === 'guillotine') return [0, 90];
+  const steps = config.rotationSteps ?? DEFAULT_ROTATION_STEPS;
+  return Array.from({ length: steps }, (_, i) => (i * 360) / steps);
+}
+
+/**
+ * True when the part fits some usable area in an orientation it is allowed to
+ * take.
+ *
+ * In guillotine mode the part is its bounding box, so this is the axis-aligned
+ * fit it has always been. In nest mode the part can be turned to angles that
+ * are not quarter turns, and a diagonal orientation has a different bounding
+ * box - so the test is run against the real outline turned to each allowed
+ * angle. Without that, `part-too-large` would warn about parts a nester can
+ * place perfectly well.
+ */
+function fitsAnywhere(
+  part: Part,
+  areas: readonly Rect[],
+  angles: readonly number[],
+  mode: SolverMode,
+): boolean {
+  const outline = mode === 'nest' ? partOutline(part) : null;
+  return angles.some((angle) => {
+    const box =
+      outline === null
+        ? // A quarter turn swaps the box; anything else cannot occur here.
+          angle % 180 === 0
+          ? { width: part.width, height: part.height }
+          : { width: part.height, height: part.width }
+        : boundsOf(rotatePolygon(outline, angle));
+    return areas.some((r) => fits(box.width, box.height, r));
+  });
 }
 
 /**
@@ -115,6 +182,22 @@ export function validateInputs(
   config: SolverConfig,
 ): InputIssue[] {
   const issues: InputIssue[] = [];
+  const mode = solverMode(config);
+
+  // The nesting engine arrives in a later M7 PR. Until it does, accepting
+  // `mode: 'nest'` would produce a guillotine layout while `checkResult` stopped
+  // asking whether that layout is cuttable - a config value that quietly
+  // weakens validation and changes nothing else. Refusing it is cheap, and this
+  // issue is deleted the moment `src/solver/nest/` exists.
+  if (mode === 'nest') {
+    issues.push({
+      kind: 'unsupported-solver-mode',
+      severity: 'error',
+      mode,
+      message:
+        'Free-form nesting for a CNC router is not available yet. Set the machine to Table saw.',
+    });
+  }
 
   const kerfOk = Number.isFinite(config.kerf) && config.kerf >= 0;
   if (!kerfOk) {
@@ -185,6 +268,51 @@ export function validateInputs(
         qty: part.qty,
         message: `Part "${part.label}" has a quantity of ${part.qty}. It must be a whole number of 1 or more.`,
       });
+    }
+
+    // The outline is only meaningful once the box it must match is sane, and it
+    // is checked against the box rather than on its own terms: `width`/`height`
+    // stay the bounding box in M7, and an outline that disagrees with them
+    // would have every consumer reading one shape and drawing another.
+    if (structurallyOk && part.outline !== undefined) {
+      if (part.outline.length < 3) {
+        structurallyOk = false;
+        issues.push({
+          kind: 'outline-too-few-points',
+          severity: 'error',
+          partId: part.id,
+          points: part.outline.length,
+          message: `Part "${part.label}" has an outline of ${part.outline.length} point(s). A shape needs at least three.`,
+        });
+      } else {
+        const bounds = boundsOf(part.outline);
+        const matches =
+          approxEq(bounds.x, 0) &&
+          approxEq(bounds.y, 0) &&
+          approxEq(bounds.width, part.width) &&
+          approxEq(bounds.height, part.height);
+        if (!matches) {
+          structurallyOk = false;
+          issues.push({
+            kind: 'outline-bounds-mismatch',
+            severity: 'error',
+            partId: part.id,
+            bounds,
+            message: `Part "${part.label}" is ${mm(part.width)} x ${mm(part.height)}, but its outline spans ${mm(bounds.width)} x ${mm(bounds.height)} from (${mm(bounds.x)}, ${mm(bounds.y)}). An outline must sit at the top-left of the part's own bounding box.`,
+          });
+        } else if (isSelfIntersecting(part.outline)) {
+          // A warning, not an error: the packer and the renderer both cope, and
+          // the area a self-crossing ring reports is merely odd rather than
+          // unusable. The user is the one who can tell whether the drawing was
+          // meant that way.
+          issues.push({
+            kind: 'outline-self-intersecting',
+            severity: 'warning',
+            partId: part.id,
+            message: `Part "${part.label}" has an outline that crosses itself. Its area and its nested fit will be wrong; check the original drawing.`,
+          });
+        }
+      }
     }
 
     if (structurallyOk) validParts.push(part);
@@ -271,13 +399,14 @@ export function validateInputs(
     // Every matching sheet was already reported as unusable; do not pile on.
     if (areas === undefined || areas.length === 0) continue;
 
-    if (fitsAnywhere(part, areas, part.rotationPolicy === 'free90')) continue;
+    if (fitsAnywhere(part, areas, allowedAngles(part, mode, config), mode)) continue;
 
     // Grain lock reads very differently from "too big", and it is by far the
     // more likely mistake: the part does fit, just not the way round the grain
     // allows. Telling the user "too large" here would send them to re-measure
     // a part that is the right size.
-    if (part.rotationPolicy === 'locked' && fitsAnywhere(part, areas, true)) {
+    const unlocked = allowedAngles({ ...part, rotationPolicy: 'free90' }, mode, config);
+    if (part.rotationPolicy === 'locked' && fitsAnywhere(part, areas, unlocked, mode)) {
       issues.push({
         kind: 'part-blocked-by-grain-lock',
         severity: 'warning',
@@ -355,7 +484,8 @@ export type ResultViolation = ViolationMeta &
         footprint: Rect;
         usable: Rect;
       }
-    | { kind: 'illegal-rotation'; stockInstanceId: string; partId: string }
+    | { kind: 'illegal-rotation'; stockInstanceId: string; partId: string; angleDeg: number }
+    | { kind: 'non-quarter-angle'; stockInstanceId: string; partId: string; angleDeg: number }
     | { kind: 'not-guillotine-decomposable'; stockInstanceId: string }
     | {
         kind: 'material-mismatch';
@@ -398,6 +528,57 @@ export interface ResultCheck {
  */
 const WASTE_TOLERANCE = 1e-9;
 
+/**
+ * The angle, folded into `[0, 360)` so the tests below can be written once.
+ *
+ * A solver is free to emit -90 or 450; both name an orientation this checker
+ * already has an opinion about, and rejecting them for their spelling would be
+ * a rule about arithmetic rather than about woodworking.
+ */
+function normalizeAngle(angleDeg: number): number {
+  if (!Number.isFinite(angleDeg)) return Number.NaN;
+  return ((angleDeg % 360) + 360) % 360;
+}
+
+/** True when the part is left square to the sheet, or turned a half turn. */
+function isHalfTurn(angleDeg: number): boolean {
+  const a = normalizeAngle(angleDeg);
+  return approxEq(a, 0) || approxEq(a, 180) || approxEq(a, 360);
+}
+
+/** True when the part is square to the sheet or on a quarter turn from it. */
+function isQuarterTurn(angleDeg: number): boolean {
+  const a = normalizeAngle(angleDeg);
+  return [0, 90, 180, 270, 360].some((q) => approxEq(a, q));
+}
+
+/**
+ * True when this placement should be measured as its bounding box rather than
+ * as its real outline.
+ *
+ * **Mode decides this, not shape.** In guillotine mode a part *is* its bounding
+ * box: the saw cuts a rectangle, so the material inside the box is gone whether
+ * the drawn shape fills it or not - which is the same reason `placedArea`
+ * charges the box in this mode. Measuring an imported outline here instead
+ * would let two parts' boxes overlap as long as their curves cleared, and that
+ * layout is exactly the uncuttable one this checker exists to catch.
+ *
+ * In nest mode the router follows the outline, so the polygon is the truth -
+ * except for a part with no outline sitting on a quarter turn, where the box is
+ * the same answer arrived at more cheaply.
+ */
+function isPlainBox(part: Part, placement: Placement, mode: SolverMode): boolean {
+  if (mode === 'guillotine') return true;
+  return part.outline === undefined && isQuarterTurn(placement.angleDeg);
+}
+
+/** Degrees for a message: whole numbers stay whole, the rest keep one decimal. */
+function formatAngle(angleDeg: number): string {
+  if (!Number.isFinite(angleDeg)) return `${angleDeg}°`;
+  const rounded = Math.round(angleDeg * 10) / 10;
+  return `${Number.isInteger(rounded) ? rounded : rounded.toFixed(1)}°`;
+}
+
 type StockLookup =
   | { ok: true; stock: Stock }
   | { ok: false; reason: 'malformed-id' | 'unknown-stock' | 'index-out-of-range' };
@@ -411,6 +592,7 @@ type StockLookup =
  */
 export function checkResult(result: Result, options: ResultCheckOptions): ResultCheck {
   const { parts, stock, config } = options;
+  const mode = solverMode(config);
   const partsById = new Map(parts.map((part) => [part.id, part]));
   const stockById = new Map(stock.map((sheet) => [sheet.id, sheet]));
 
@@ -531,9 +713,9 @@ export function checkResult(result: Result, options: ResultCheckOptions): Result
     // Placements paired with the geometry they imply. Placements whose part is
     // unknown are dropped here, because without the part there is no footprint
     // and nothing geometric can be said - the unknown-part violation covers it.
-    const placed: { placement: Placement; part: Part; footprint: Rect }[] = [];
+    const placed: { placement: Placement; part: Part; footprint: Rect; polygon: Point[] }[] = [];
     let layoutComplete = true;
-    let placedArea = 0;
+    let sheetPlacedArea = 0;
 
     for (const placement of layout.placements) {
       const part = requirePart(placement.partId);
@@ -544,17 +726,39 @@ export function checkResult(result: Result, options: ResultCheckOptions): Result
       }
 
       const footprint = placementRect(part, placement);
-      placed.push({ placement, part, footprint });
-      placedArea += area(footprint);
+      const polygon = placementPolygon(part, placement);
+      placed.push({ placement, part, footprint, polygon });
+      sheetPlacedArea += placedArea(part, mode);
 
       // Invariant 3: rotation legality. Grain lock is a hard constraint - a
-      // rotated grain-locked panel is visibly wrong on a finished piece.
-      if (placement.rotated && part.rotationPolicy !== 'free90') {
+      // rotated grain-locked panel is visibly wrong on a finished piece. A half
+      // turn is legal even so: it leaves the grain running along the same axis.
+      //
+      // Measured against what the grain permits, deliberately not against
+      // `config.rotationSteps` - that is a knob on the search, and a layout
+      // already cut must not become invalid because someone re-solved the
+      // project at a coarser step count.
+      if (part.rotationPolicy !== 'free90' && !isHalfTurn(placement.angleDeg)) {
         violations.push({
           kind: 'illegal-rotation',
           stockInstanceId: sheetId,
           partId: part.id,
-          message: `Part "${part.label}" is placed rotated on "${sheetId}", but its grain is locked so it may not be turned.`,
+          angleDeg: placement.angleDeg,
+          message: `Part "${part.label}" is placed at ${formatAngle(placement.angleDeg)} on "${sheetId}", but its grain is locked so it may only be left square or turned a half turn.`,
+        });
+      }
+
+      // A table saw cuts square to the sheet and nothing else. This is not
+      // covered by invariant 4 below: a part turned 45° still has a rectangular
+      // bounding box, and a sheet of those boxes can tile guillotine-cleanly
+      // while every part on it is uncuttable.
+      if (mode === 'guillotine' && !isQuarterTurn(placement.angleDeg)) {
+        violations.push({
+          kind: 'non-quarter-angle',
+          stockInstanceId: sheetId,
+          partId: part.id,
+          angleDeg: placement.angleDeg,
+          message: `Part "${part.label}" is placed at ${formatAngle(placement.angleDeg)} on "${sheetId}". A table saw can only cut parts square to the sheet.`,
         });
       }
 
@@ -570,8 +774,14 @@ export function checkResult(result: Result, options: ResultCheckOptions): Result
         });
       }
 
-      // Invariant 2: inside the usable area.
-      if (!containsRect(usable, footprint)) {
+      // Invariant 2: inside the usable area. The bounding box is the cheap and
+      // exactly equivalent test for a part that is its own box; a real outline
+      // at an angle needs the polygon, whose box can poke outside the sheet at
+      // a corner while every part of the shape stays on it.
+      const contained = isPlainBox(part, placement, mode)
+        ? containsRect(usable, footprint)
+        : polygonInRect(polygon, usable);
+      if (!contained) {
         violations.push({
           kind: 'outside-usable-area',
           stockInstanceId: sheetId,
@@ -584,17 +794,25 @@ export function checkResult(result: Result, options: ResultCheckOptions): Result
     }
 
     // Invariant 1: kerf separation. Every gap between two parts on a sheet was
-    // made by a saw cut, and every cut eats a kerf of material - so parts that
-    // clear each other by less than the kerf cannot both survive the cut.
-    // Clearance on *one* axis is enough; inflating both parts would demand
-    // 2 * kerf and reject perfectly good layouts.
+    // made by a cut, and every cut eats a kerf of material - so parts that
+    // clear each other by less than the kerf cannot both survive it.
+    //
+    // Which gap that is depends on the machine, and the two rules must not be
+    // reconciled. A saw cut has an axis, so two boxes are separated as soon as
+    // they clear on *one* of them - `clearance` takes the larger axis gap, and
+    // inflating both parts would demand 2 * kerf and reject good layouts. A
+    // router bit has no axis, so the real gap between two nested parts is the
+    // Euclidean one. `polygon.ts` documents the divergence at length.
     for (let i = 0; i < placed.length; i += 1) {
       for (let j = i + 1; j < placed.length; j += 1) {
         const a = placed[i];
         const b = placed[j];
         if (a === undefined || b === undefined) continue;
 
-        const gap = clearance(a.footprint, b.footprint);
+        const gap =
+          isPlainBox(a.part, a.placement, mode) && isPlainBox(b.part, b.placement, mode)
+            ? clearance(a.footprint, b.footprint)
+            : polygonSeparation(a.polygon, b.polygon);
         if (approxGte(gap, config.kerf)) continue;
 
         violations.push({
@@ -612,30 +830,34 @@ export function checkResult(result: Result, options: ResultCheckOptions): Result
       }
     }
 
-    // Invariant 4: the layout must be cuttable on a table saw.
-    const guillotine = checkGuillotine(
-      usable,
-      placed.map((entry) => entry.footprint),
-      config.kerf,
-      options.maxGuillotineSteps,
-    );
-    if (guillotine === 'invalid') {
-      violations.push({
-        kind: 'not-guillotine-decomposable',
-        stockInstanceId: sheetId,
-        message: `The layout on "${sheetId}" cannot be produced by edge-to-edge cuts, so it is not cuttable on a table saw.`,
-      });
-    } else if (guillotine === 'unverified') {
-      unverifiedSheets.push(sheetId);
+    // Invariant 4: the layout must be cuttable on a table saw. Guillotine mode
+    // only - a nested layout has no edge-to-edge cut sequence by construction,
+    // so running this on one would fail every result the nester ever produces.
+    if (mode === 'guillotine') {
+      const guillotine = checkGuillotine(
+        usable,
+        placed.map((entry) => entry.footprint),
+        config.kerf,
+        options.maxGuillotineSteps,
+      );
+      if (guillotine === 'invalid') {
+        violations.push({
+          kind: 'not-guillotine-decomposable',
+          stockInstanceId: sheetId,
+          message: `The layout on "${sheetId}" cannot be produced by edge-to-edge cuts, so it is not cuttable on a table saw.`,
+        });
+      } else if (guillotine === 'unverified') {
+        unverifiedSheets.push(sheetId);
+      }
     }
 
     // Check 7: waste. Measured against the full sheet, since edge trim is
     // material that was bought and lost.
     const sheetArea = sheet.width * sheet.height;
     if (sheetArea > 0) {
-      placedAreaTotal += placedArea;
+      placedAreaTotal += sheetPlacedArea;
       usedSheetAreaTotal += sheetArea;
-      const expected = 1 - placedArea / sheetArea;
+      const expected = 1 - sheetPlacedArea / sheetArea;
       // A layout with an unknown part has an unknowable area, so a mismatch
       // here would be an artefact of the missing part rather than a real one.
       if (layoutComplete && Math.abs(layout.wastePct - expected) > WASTE_TOLERANCE) {

@@ -30,12 +30,12 @@ import {
   bottom,
   EPSILON,
   isEmpty,
-  placementRect,
   type Rect,
   right,
   usableArea,
 } from './geometry';
 import { parseStockInstanceId } from './instances';
+import { placementRect } from './polygon';
 import type { Layout, Material, Part, Placement, Result, SolverConfig, Stock } from './types';
 
 // --- Search ---------------------------------------------------------------

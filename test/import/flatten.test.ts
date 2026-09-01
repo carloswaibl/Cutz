@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { minAreaBox, type Point } from '../../src/domain/polygon';
+import { minAreaBox } from '../../src/domain/polygon';
+import type { Point } from '../../src/domain/types';
 import { FLATTEN_TOLERANCE_MM, flattenPath } from '../../src/import/svg/flatten';
 import { IDENTITY, type Matrix, parseTransform, scaling } from '../../src/import/svg/transform';
 

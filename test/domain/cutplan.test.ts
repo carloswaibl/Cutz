@@ -6,7 +6,8 @@ import {
   type CutPlan,
   type CutStep,
 } from '../../src/domain/cutplan';
-import { bottom, EPSILON, placementRect, type Rect, right } from '../../src/domain/geometry';
+import { bottom, EPSILON, type Rect, right } from '../../src/domain/geometry';
+import { placementRect } from '../../src/domain/polygon';
 import type { Layout, Material, Part, Placement, Stock } from '../../src/domain/types';
 import { solve } from '../../src/solver';
 import { loadFixtures } from '../fixtures/index';
@@ -53,7 +54,7 @@ function sheet(extra: Partial<Stock> = {}): Stock {
 }
 
 function at(partId: string, x: number, y: number, rotated = false): Placement {
-  return { partId, stockInstanceId: 's#0', x, y, rotated };
+  return { partId, stockInstanceId: 's#0', x, y, angleDeg: rotated ? 90 : 0 };
 }
 
 function layoutOf(placements: Placement[]): Layout {

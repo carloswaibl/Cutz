@@ -5,16 +5,17 @@
  * "how far apart are these". Implementing them twice is how a checker ends up
  * agreeing with the bug it exists to catch, so they live here once.
  *
- * The two adapters at the bottom turn model objects into rectangles. They live
- * here for the same reason: a packer and a checker that disagree about where a
- * rotated part sits, or about how much of a sheet is usable, disagree about
- * everything downstream.
+ * `usableArea` at the bottom turns a model object into a rectangle. It lives
+ * here for the same reason: a packer and a checker that disagree about how much
+ * of a sheet is usable disagree about everything downstream. Its sibling
+ * `placementRect` moved to `polygon.ts` in M7, when a placement gained an angle
+ * and its footprint stopped being answerable with rectangles alone.
  *
  * All values are millimetres. Origin is top-left, x increases right, y
  * increases down - matching SVG, so rendering needs no coordinate flip.
  */
 
-import type { Part, Placement, Stock } from './types';
+import type { Stock } from './types';
 
 export interface Rect {
   x: number;
@@ -107,21 +108,6 @@ export function overlaps(a: Rect, b: Rect): boolean {
 }
 
 // --- Model adapters ------------------------------------------------------
-
-/**
- * The footprint a placed part occupies on its sheet, excluding kerf.
- *
- * `rotated` means the part is turned 90°, so its width and height swap. The
- * placement's x/y is the top-left corner of that footprint either way.
- */
-export function placementRect(part: Part, placement: Placement): Rect {
-  return {
-    x: placement.x,
-    y: placement.y,
-    width: placement.rotated ? part.height : part.width,
-    height: placement.rotated ? part.width : part.height,
-  };
-}
 
 /**
  * The area of a sheet that may actually be packed into.

@@ -23,11 +23,10 @@
  */
 
 import { approxEq, approxGte, approxLte, EPSILON, type Rect } from './geometry';
-
-export interface Point {
-  x: number;
-  y: number;
-}
+// `Point` is a model type - `Part.outline` is made of them - so it is declared
+// in `types.ts`, which imports nothing, and callers take it from there. This
+// file owns every operation on one.
+import type { Part, Placement, Point, SolverMode } from './types';
 
 /**
  * A rectangle that need not be axis-aligned.
@@ -365,12 +364,33 @@ function douglasPeucker(chain: readonly Point[], toleranceMm: number): Point[] {
  * placement, which is the only thing either is used for.
  */
 export function rotatePolygon(points: readonly Point[], angleDeg: number): Point[] {
-  if (angleDeg === 0) return [...points];
-  const radians = (angleDeg * Math.PI) / 180;
+  const turn = ((angleDeg % 360) + 360) % 360;
+  if (turn === 0) return [...points];
+
+  // Quarter turns are done with exact integers rather than through `Math.cos`,
+  // which returns 6.1e-17 rather than 0 for 90 degrees. That noise is far below
+  // any tolerance in this codebase, but a quarter turn is the *only* thing the
+  // guillotine packer emits, so it is what every existing layout, every cut
+  // plan and every benchmark baseline is built from - and there is no reason
+  // for a 600mm part to come back 600.00000000000006mm wide.
+  const exact = QUARTER_TURNS[turn];
+  if (exact !== undefined) {
+    const [cos, sin] = exact;
+    return points.map((p) => ({ x: p.x * cos - p.y * sin, y: p.x * sin + p.y * cos }));
+  }
+
+  const radians = (turn * Math.PI) / 180;
   const cos = Math.cos(radians);
   const sin = Math.sin(radians);
   return points.map((p) => ({ x: p.x * cos - p.y * sin, y: p.x * sin + p.y * cos }));
 }
+
+/** `[cos, sin]` for the turns that must be exact. */
+const QUARTER_TURNS: Record<number, [number, number]> = {
+  90: [0, 1],
+  180: [-1, 0],
+  270: [0, -1],
+};
 
 export function translatePolygon(points: readonly Point[], dx: number, dy: number): Point[] {
   return points.map((p) => ({ x: p.x + dx, y: p.y + dy }));
@@ -532,6 +552,123 @@ function segmentsIntersect(a0: Point, a1: Point, b0: Point, b1: Point): boolean 
     ((d1 > EPSILON && d2 < -EPSILON) || (d1 < -EPSILON && d2 > EPSILON)) &&
     ((d3 > EPSILON && d4 < -EPSILON) || (d3 < -EPSILON && d4 > EPSILON))
   );
+}
+
+// --- Model adapters -------------------------------------------------------
+
+/**
+ * The part's outline, or the four corners of its bounding box when it has none.
+ *
+ * This is what keeps `Part.outline` optional without turning the codebase into
+ * the optional-field soup `CLAUDE.md` warns against: **no call site branches on
+ * the field.** A hand-entered rectangle and an imported curve are both polygons
+ * from here on. `docs/plan-m7.md` §7 decision 6.
+ *
+ * Returned clockwise in this y-down system, matching the winding an importer
+ * produces for an outer contour.
+ */
+export function partOutline(part: Part): readonly Point[] {
+  if (part.outline !== undefined && part.outline.length >= 3) return part.outline;
+  return [
+    { x: 0, y: 0 },
+    { x: part.width, y: 0 },
+    { x: part.width, y: part.height },
+    { x: 0, y: part.height },
+  ];
+}
+
+/**
+ * Where a placed part's real geometry actually sits on its sheet.
+ *
+ * The single mapping from a `Placement` to a polygon, the way `placementRect`
+ * is for boxes - and `placementRect` is now defined in terms of this one, so
+ * the renderer, the exporters and the invariant checker cannot disagree about
+ * where a turned part is.
+ *
+ * The part is rotated about its own origin and then translated so the **turned
+ * shape's bounding-box top-left** lands on `placement.x/y`. Anchoring the bounds
+ * rather than the rotated origin is what makes `Placement.x/y` go on meaning
+ * what it has always meant - the top-left of the footprint. Rotating about the
+ * origin alone would put a 90°-turned `w x h` part at `x ∈ [-h, 0]`, which is
+ * not where any existing renderer draws it.
+ */
+export function placementPolygon(part: Part, placement: Placement): Point[] {
+  const turned = rotatePolygon(partOutline(part), placement.angleDeg);
+  const bounds = boundsOf(turned);
+  return translatePolygon(turned, placement.x - bounds.x, placement.y - bounds.y);
+}
+
+/**
+ * The footprint a placed part occupies on its sheet, excluding kerf.
+ *
+ * Lives here rather than in `geometry.ts` next to the other rectangle helpers
+ * because it is no longer answerable with rectangles: an arbitrary angle needs
+ * the real polygon, and `geometry.ts` is deliberately polygon-free and sits
+ * *below* this file in the import graph. Splitting it into an axis-aligned
+ * version there and a general one here would be worse - `geometry.ts`'s own
+ * header warns that a packer and a checker which disagree about where a turned
+ * part sits disagree about everything downstream, and two functions is exactly
+ * how that happens.
+ *
+ * For the quarter turns guillotine emits this is arithmetically identical to
+ * the pre-M7 width/height swap.
+ */
+export function placementRect(part: Part, placement: Placement): Rect {
+  return boundsOf(placementPolygon(part, placement));
+}
+
+/**
+ * How much sheet a part consumes, in mm².
+ *
+ * Mode-dependent, and that is correct rather than a fudge. A table saw cuts a
+ * rectangle, so everything inside a part's bounding box is gone whatever shape
+ * the part is - in guillotine mode a part consumes its box. A router follows the
+ * outline, so the material outside it survives and can hold another part - in
+ * nest mode a part consumes its outline.
+ *
+ * The consequence is that nest and guillotine waste percentages for the same
+ * parts are not directly comparable, which the UI states rather than hides. One
+ * function serves solver, validator and UI so the number can never be computed
+ * two ways. `docs/plan-m7.md` §7 decision 4.
+ */
+export function placedArea(part: Part, mode: SolverMode): number {
+  if (mode === 'guillotine') return part.width * part.height;
+  return polygonArea(partOutline(part));
+}
+
+/**
+ * True when a ring crosses itself.
+ *
+ * Only adjacency is exempt: consecutive edges share an endpoint by
+ * construction, and the closing edge is adjacent to the first.
+ *
+ * Detects *proper* crossings, so a ring pinched to a single shared vertex - two
+ * lobes meeting at a point - reads as clean. That suits what this is for: it
+ * backs a warning, not an error, and the cost of missing a degenerate shape is
+ * a message the user does not get, never a layout that is wrong.
+ *
+ * O(n²). It runs once per solve on parts that actually carry an outline, and
+ * outlines arrive simplified, so the vertex counts are tens rather than the
+ * hundreds a flattened curve starts life with.
+ */
+export function isSelfIntersecting(points: readonly Point[]): boolean {
+  const n = points.length;
+  if (n < 4) return false;
+
+  for (let i = 0; i < n; i += 1) {
+    const a0 = points[i];
+    const a1 = points[(i + 1) % n];
+    if (!a0 || !a1) continue;
+    for (let j = i + 1; j < n; j += 1) {
+      // Adjacent edges, and the closing edge against the first.
+      if (j === i || (j + 1) % n === i || (i + 1) % n === j) continue;
+      const b0 = points[j];
+      const b1 = points[(j + 1) % n];
+      if (!b0 || !b1) continue;
+      if (segmentsIntersect(a0, a1, b0, b1)) return true;
+    }
+  }
+  return false;
 }
 
 /** Shortest distance from a point to a segment, clamped to the segment's extent. */

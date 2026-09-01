@@ -19,6 +19,32 @@
  */
 export type RotationPolicy = 'locked' | 'free90';
 
+/**
+ * Which packing engine a project is solved with, and therefore which machine
+ * its layouts are valid for.
+ *
+ * `guillotine` is a table saw: every cut runs edge to edge, and a part consumes
+ * its whole bounding box. `nest` is a CNC router: parts pack at angles inside
+ * each other's concavities, and a part consumes only its outline. The choice is
+ * explicit per project rather than inferred from whether parts have outlines -
+ * silently changing which machine an output is valid for is a genuinely
+ * dangerous surprise in a workshop. `docs/plan-m7.md` §7 decision 5.
+ */
+export type SolverMode = 'guillotine' | 'nest';
+
+/**
+ * A point in millimetres.
+ *
+ * This lives here rather than in `polygon.ts` with the operations on it because
+ * `Part.outline` made it a model type: `types.ts` imports nothing, so anything
+ * a model field is built from has to be here or the dependency graph turns into
+ * a cycle. `polygon.ts` owns everything you can *do* with one.
+ */
+export interface Point {
+  x: number;
+  y: number;
+}
+
 export interface Material {
   id: string;
   name: string;
@@ -37,6 +63,24 @@ export interface Part {
   qty: number;
   materialId: string;
   rotationPolicy: RotationPolicy;
+  /**
+   * The part's true shape, as a closed polygon in part-local millimetres:
+   * origin at the bounding box top-left, x right, y down, no repeated final
+   * point.
+   *
+   * Absent means "this part is its bounding box" - a hand-entered rectangle,
+   * which stays the common case. Nothing branches on that: `partOutline()` in
+   * `polygon.ts` returns the four rectangle corners when this is missing, so
+   * call sites see a polygon either way.
+   *
+   * `width`/`height` remain the bounding box even when this is present. That is
+   * what lets the guillotine packer, the cut planner, both renderers and both
+   * exporters go on reading the box they always read.
+   *
+   * Invariant, checked by `validateInputs`: `boundsOf(outline)` equals
+   * `{ x: 0, y: 0, width, height }` within `EPSILON`.
+   */
+  outline?: readonly Point[];
 }
 
 export interface Stock {
@@ -68,6 +112,26 @@ export interface SolverConfig {
    * Defaults to 'balanced'.
    */
   effort?: SolverEffort;
+  /**
+   * Which engine packs this project, and therefore which machine its layouts
+   * are valid for. Defaults to 'guillotine'.
+   */
+  mode?: SolverMode;
+  /**
+   * How many equally spaced orientations over 360° the nesting engine may try,
+   * e.g. 4 gives {0, 90, 180, 270}. Defaults to 4. Ignored in guillotine mode,
+   * which has only ever had two.
+   *
+   * Grain-locked parts are restricted to {0, 180} regardless: a half turn keeps
+   * the grain running along the same axis, so it is physically legal where a
+   * quarter turn is not.
+   *
+   * This is a search knob, not a constraint on a finished layout - `checkResult`
+   * deliberately does not measure `angleDeg` against it, or re-solving at a
+   * coarser step count would retroactively invalidate a layout that is already
+   * cut.
+   */
+  rotationSteps?: 2 | 4 | 12 | 24;
 }
 
 export interface Placement {
@@ -77,8 +141,16 @@ export interface Placement {
   x: number;
   /** Top-left corner of the part, in mm, excluding kerf. */
   y: number;
-  /** When true the part is turned 90°, so its footprint is height x width. */
-  rotated: boolean;
+  /**
+   * How far the part is turned, in degrees clockwise (y grows downward, so
+   * clockwise is the positive direction). Guillotine emits only 0 and 90.
+   *
+   * `x`/`y` anchor the top-left of the turned part's *axis-aligned bounding
+   * box*, not the part's own origin - so for 0 and 90 this says exactly what
+   * `rotated: boolean` used to say, and `placementRect` returns exactly what it
+   * always returned.
+   */
+  angleDeg: number;
 }
 
 export interface Layout {

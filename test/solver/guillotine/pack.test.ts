@@ -32,8 +32,8 @@ function pack(parts: Part[], sheets: Stock[], cfg = config()) {
 }
 
 /** `x,y[,r]` per placement - compact enough to read a whole layout at a glance. */
-function coords(placements: { x: number; y: number; rotated: boolean }[]): string[] {
-  return placements.map((p) => `${p.x},${p.y}${p.rotated ? ',r' : ''}`);
+function coords(placements: { x: number; y: number; angleDeg: number }[]): string[] {
+  return placements.map((p) => `${p.x},${p.y}${p.angleDeg !== 0 ? ',r' : ''}`);
 }
 
 describe('greedyPack', () => {

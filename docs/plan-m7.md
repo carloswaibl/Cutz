@@ -376,7 +376,7 @@ Exact scope may shift as each PR's own "what shipped" notes get added here.
   bench` reporting the eight existing baselines unmoved. No browser pass - nothing
   user-visible changes until PR 8.
 
-### PR 3 - `feat/domain-outlines` - model and validator, no user-visible change
+### PR 3 - `feat/domain-outlines` - model and validator, no user-visible change - **shipped**
 
 - `Part.outline`, `Placement.angleDeg` replacing `rotated`, `SolverConfig.mode` and
   `rotationSteps` per §3.3.
@@ -385,6 +385,62 @@ Exact scope may shift as each PR's own "what shipped" notes get added here.
 - Guillotine emits `angleDeg: 0 | 90`; `placementRect` returns identical results.
 - Tests: a rectangle with and without an explicit outline validates identically; the new
   input issues fire; `illegal-rotation` still catches a rotated grain-locked part.
+
+**What shipped, and what changed on the way.**
+
+- **Mode, not shape, decides whether a placement is measured as a box or as a polygon.** §3.4
+  says `kerf-separation` uses `polygonSeparation` "when either part has an outline". Implemented
+  literally, that silently changes the *guillotine* path the moment PR 4 starts attaching
+  outlines: two imported parts set to Table saw would pass the kerf check whenever their curves
+  cleared, even with their bounding boxes squarely on top of each other - which is precisely the
+  uncuttable layout the checker exists to catch. It also contradicts §7 decision 4, which already
+  says a part consumes its whole box on a saw. So `isPlainBox` returns true for *every* guillotine
+  placement, and the polygon predicates run only in nest mode. Caught by a test asserting that the
+  same nested pair is valid on a router and a kerf violation on a saw.
+- **`Point` moved from `polygon.ts` to `types.ts`.** `Part.outline` made it a model type, and
+  `types.ts` imports nothing - anything a model field is built from has to live there or
+  `types -> polygon -> geometry -> types` becomes a cycle. Eight importers cut over, no re-export,
+  per PR 2's precedent. `polygon.ts` still owns every operation on one.
+- **`placementRect` moved to `polygon.ts` and generalised**, rather than being duplicated. It is
+  now `boundsOf(placementPolygon(...))`. It could not stay in `geometry.ts`: an arbitrary angle
+  needs the real polygon, and `geometry.ts` is deliberately polygon-free and sits *below*
+  `polygon.ts` in the import graph. Keeping an axis-aligned copy there and a general one here is
+  exactly the split `geometry.ts`'s own header warns against - a packer and a checker that
+  disagree about where a turned part sits disagree about everything downstream. Seven call sites
+  changed import path only.
+- **`placementPolygon` anchors the turned shape's bounding box, not its rotated origin.** §3.2
+  describes it as `partOutline` "rotated by `angleDeg` and translated to `x`/`y`". Done that way a
+  90°-turned `w x h` part lands at `x ∈ [-h, 0]`, because `rotatePolygon` turns about the origin -
+  nowhere near where any existing renderer draws it. Translating by `placement - bounds` instead is
+  what keeps `Placement.x/y` meaning what it has always meant, and is what makes §1 criterion 3
+  true rather than aspirational.
+- **`rotatePolygon` now does quarter turns with exact integers.** `Math.cos(90°)` is 6.1e-17, not
+  0, so a 600mm part came back 600.00000000000006mm wide. That is eight orders below `EPSILON` and
+  broke nothing, but a quarter turn is the *only* thing the guillotine packer emits, so it is what
+  every existing layout, cut plan and benchmark baseline is built from. Making it exact was
+  cheaper than reasoning about where the noise might one day matter.
+- **`illegal-rotation` is measured against the grain, deliberately not against `rotationSteps`.**
+  A locked part is legal at 0 and 180 - a half turn keeps the grain on the same axis - and a
+  `free90` part is legal at any angle. Checking the configured step set instead would mean
+  re-solving a project at a coarser step count retroactively invalidated a layout already cut.
+  `rotationSteps` is documented on the type as a search knob for that reason.
+- **`non-quarter-angle` is a new violation kind rather than a reuse of `illegal-rotation`.**
+  Confirmed with the project owner. They are two different faults - "the grain forbids this" and
+  "this machine cannot cut it" - and invariant 4 does not cover the second: a part turned 45°
+  still has a rectangular bounding box, and a sheet of such boxes can tile guillotine-cleanly
+  while every part on it is uncuttable.
+- **`unsupported-solver-mode` (error) closes the two-PR window before an engine exists.** Also
+  confirmed with the owner. Without it, `mode: 'nest'` would return a guillotine layout while
+  `checkResult` quietly stopped asking whether that layout is cuttable. Both solver entry points
+  already gate on `hasErrors`, so the guard cost nothing new. **PR 6 deletes it.**
+- **`Footprint.rotated` in `freeRects.ts` stays a boolean.** It is a solver-internal orientation
+  flag over the two footprints a saw can produce, not a `Placement`. Leaving it alone kept the
+  packer's tie-break ordering, and therefore the baselines, untouched; only what leaves the engine
+  speaks in degrees.
+- Verified: `typecheck`, `test:run` (880 passing), `lint` and `build` clean. `npm run bench`
+  regenerated from scratch and diffed against the committed `baseline.json` - **bit-identical
+  across all eight fixtures**, which is a stronger check than the ratchet itself, since that only
+  asserts `<=`. No browser pass - nothing user-visible changes until PR 8.
 
 ### PR 4 - `feat/import-outlines` - stop discarding the polygon
 
