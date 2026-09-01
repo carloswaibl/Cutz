@@ -18,6 +18,7 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { polygonArea } from '../../src/domain/polygon';
 import type { Part, SolverConfig, Stock } from '../../src/domain/types';
 import { validateInputs } from '../../src/domain/validate';
 import { MAX_SHAPES } from '../../src/import/errors';
@@ -277,11 +278,43 @@ describe('the documented subset', () => {
     expect(parts[0]?.angle).toBeLessThan(90);
   });
 
+  it('carries a curve through as an outline rather than only its box', () => {
+    // The M7 change, at the smallest scale it is visible: a circle stops being
+    // a 100x100 square as far as anything downstream can tell. Its box is still
+    // 100x100, which is what keeps the guillotine path reading what it always
+    // read - `docs/plan-m7.md` §1 criterion 1.
+    const round = synthetic('arcs.svg').parts[0];
+    expect(round?.outline?.length ?? 0).toBeGreaterThan(16);
+    expect(round?.width).toBeCloseTo(100, 1);
+    // A ring inscribed in the circle, so a little under its area and nowhere
+    // near the 10000mm² box - which is the entire point of the milestone.
+    const area = polygonArea(round?.outline ?? []);
+    expect(area).toBeGreaterThan(Math.PI * 50 * 50 * 0.99);
+    expect(area).toBeLessThanOrEqual(Math.PI * 50 * 50);
+  });
+
   it('nests a hole inside its own compound path', () => {
     const outcome = synthetic('compound-path.svg');
     expect(outcome.parts).toHaveLength(1);
     expect(outcome.parts[0]?.width).toBeCloseTo(100, 6);
     expect(outcome.warnings.find((w) => w.kind === 'hole-discarded')?.count).toBe(1);
+    // Holes stay discarded in M7 - only the outer outline changed. The square
+    // ring left behind is its own box, so no geometry is stored at all.
+    expect(outcome.parts[0]?.outline).toBeUndefined();
+  });
+
+  it('stores no outline for a rectangle, however it was drawn', () => {
+    // A drawing of rectangular panels is the common case, and it must come out
+    // of M7 exactly as it went in: an imported panel structurally identical to
+    // a typed one. A rectangle drawn at 30 degrees is the sharp version of the
+    // claim - it is only a rectangle once the outline has been squared to its
+    // own oriented box, which is what `partLocalOutline`'s first step does.
+    for (const part of imported('inkscape-shelf-unit.svg').parts) {
+      expect(part.outline, part.label).toBeUndefined();
+    }
+    const tilted = synthetic('nested-transforms.svg').parts[0];
+    expect(tilted?.angle).toBeCloseTo(30, 1);
+    expect(tilted?.outline).toBeUndefined();
   });
 
   it('makes two disjoint subpaths of one path into two parts', () => {
@@ -310,6 +343,17 @@ describe('the documented subset', () => {
     expect(stretched?.flags).toEqual([]);
     expect(stretched?.width).toBeCloseTo(100, 6);
     expect(outcome.warnings.find((w) => w.kind === 'sheared-shape')?.count).toBe(1);
+  });
+
+  it('keeps a sheared rectangle as the parallelogram it actually is', () => {
+    // The `sheared` flag says the box is strictly larger than the shape. Until
+    // M7 that was all the app could say; now the parallelogram itself survives,
+    // so a router can follow it even though the flag still stands for a saw.
+    const skewed = synthetic('shear.svg').parts.find((p) => p.label === 'skewed');
+    expect(skewed?.outline).toHaveLength(4);
+    expect(polygonArea(skewed?.outline ?? [])).toBeLessThan(
+      (skewed?.width ?? 0) * (skewed?.height ?? 0),
+    );
   });
 
   it('takes clipped geometry unclipped, and says the part may be larger', () => {
@@ -447,6 +491,10 @@ describe('properties that must hold for every file', () => {
   });
 
   it.each(names)('%s produces parts that pass domain validation', (name) => {
+    // The outline is carried across exactly as `ImportDialog.handleCommit`
+    // does, which makes this the real check on `Part.outline`'s invariant:
+    // `outline-bounds-mismatch` is an error, so any ring that does not span
+    // its part's reported box to within EPSILON fails here.
     const parts: Part[] = imported(name).parts.map((part, i) => ({
       id: `p${i}`,
       label: part.label,
@@ -455,6 +503,7 @@ describe('properties that must hold for every file', () => {
       qty: part.qty,
       materialId: 'm1',
       rotationPolicy: 'free90',
+      ...(part.outline ? { outline: part.outline } : {}),
     }));
     const stock: Stock[] = [
       { id: 's1', materialId: 'm1', width: 2440, height: 1220, qty: 10, grainAxis: 'x' },

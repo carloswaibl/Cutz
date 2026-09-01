@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildCutPlans } from '../../src/domain/cutplan';
+import { boundsOf, polygonArea } from '../../src/domain/polygon';
+import type { Part } from '../../src/domain/types';
 import { solve } from '../../src/solver/index';
 import { BOOKSHELF_PRESET, DRAWER_BOXES_PRESET, PRESETS } from '../../src/ui/state/presets';
 import type { AppState } from '../../src/ui/state/types';
@@ -122,5 +124,80 @@ describe('LOAD_PROJECT', () => {
     expect(next.activeSheetIndex).toBe(0);
     expect(next.hoveredPartId).toBeNull();
     expect(next.selectedMaterialId).toBe('all');
+  });
+});
+
+/**
+ * An imported part carries a polygon the user never sees and cannot edit, and
+ * `Part.outline` is defined as spanning exactly the part's `width` x `height` -
+ * an invariant `validateInputs` enforces as an **error**, which blocks solving
+ * for every material at once. Retyping a width in the parts table is therefore
+ * the one ordinary edit that could strand one. `docs/plan-m7.md` §5 PR 4.
+ */
+describe('UPDATE_PART and imported outlines', () => {
+  const bracket: Part = {
+    id: 'p-bracket',
+    label: 'Bracket',
+    width: 600,
+    height: 300,
+    qty: 1,
+    materialId: 'mat-ply-34',
+    rotationPolicy: 'free90',
+    outline: [
+      { x: 0, y: 0 },
+      { x: 600, y: 0 },
+      { x: 600, y: 150 },
+      { x: 300, y: 150 },
+      { x: 300, y: 300 },
+      { x: 0, y: 300 },
+    ],
+  };
+
+  const state: AppState = {
+    displayUnit: 'metric-mm',
+    fractionDenominator: 16,
+    materials: BOOKSHELF_PRESET.materials,
+    parts: [bracket],
+    stock: BOOKSHELF_PRESET.stock,
+    config: BOOKSHELF_PRESET.config,
+    activeSheetIndex: 0,
+    hoveredPartId: null,
+    selectedMaterialId: 'all',
+    showCutSequence: true,
+  };
+
+  function updated(patch: Partial<Part>): Part {
+    const next = cutListReducer(state, { type: 'UPDATE_PART', id: 'p-bracket', part: patch });
+    const part = next.parts[0];
+    if (!part) throw new Error('the part disappeared');
+    return part;
+  }
+
+  it('stretches the outline onto a retyped width, rather than stranding it', () => {
+    const part = updated({ width: 800 });
+    expect(boundsOf(part.outline ?? [])).toEqual({ x: 0, y: 0, width: 800, height: 300 });
+  });
+
+  it('keeps the shape concave rather than dropping it back to a rectangle', () => {
+    // A part quietly turning back into a rectangle is the kind of change a
+    // woodworker discovers at the router.
+    const part = updated({ width: 800, height: 500 });
+    expect(part.outline).toHaveLength(6);
+    expect(polygonArea(part.outline ?? [])).toBeLessThan(800 * 500);
+  });
+
+  it('leaves an edit that is not a resize completely alone', () => {
+    expect(updated({ label: 'Gusset' }).outline).toEqual(bracket.outline);
+  });
+
+  it('does not invent an outline for a part that never had one', () => {
+    const { outline: _dropped, ...rectangular } = bracket;
+    const plain: AppState = { ...state, parts: [rectangular] };
+    const next = cutListReducer(plain, {
+      type: 'UPDATE_PART',
+      id: 'p-bracket',
+      part: { width: 800 },
+    });
+    expect(next.parts[0]?.outline).toBeUndefined();
   });
 });

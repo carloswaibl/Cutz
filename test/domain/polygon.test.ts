@@ -3,6 +3,7 @@ import { clearance } from '../../src/domain/geometry';
 import {
   boundsOf,
   convexHull,
+  fitPolygonToBox,
   isSelfIntersecting,
   minAreaBox,
   partOutline,
@@ -502,6 +503,45 @@ describe('placedArea', () => {
 
   it('agrees between modes for a part that is its own box', () => {
     expect(placedArea(part(), 'nest')).toBeCloseTo(placedArea(part(), 'guillotine'), 6);
+  });
+});
+
+describe('fitPolygonToBox', () => {
+  it('leaves a ring that already spans its box alone', () => {
+    const ring = [p(0, 0), p(600, 0), p(600, 300), p(0, 300)];
+    expect(fitPolygonToBox(ring, 600, 300)).toEqual(ring);
+  });
+
+  it('moves a ring drawn away from the origin back onto it', () => {
+    const fitted = fitPolygonToBox([p(100, 50), p(700, 50), p(700, 350), p(100, 350)], 600, 300);
+    expect(boundsOf(fitted)).toEqual({ x: 0, y: 0, width: 600, height: 300 });
+  });
+
+  it('stretches a ring that fell short of its box, on each axis independently', () => {
+    // The case `groupRows` produces: six shelves within the grouping tolerance
+    // of each other, the row reporting the largest and carrying the first's
+    // shape. The stretch is bounded by that tolerance, so it is below what a
+    // saw holds - but it has to be exact, because a mismatch is an error that
+    // blocks solving rather than a rounding complaint.
+    const fitted = fitPolygonToBox([p(0, 0), p(599.7, 0), p(599.7, 300), p(0, 300)], 600, 300);
+    expect(boundsOf(fitted)).toEqual({ x: 0, y: 0, width: 600, height: 300 });
+    expect(fitted[2]).toEqual(p(600, 300));
+  });
+
+  it('keeps a concave shape concave rather than filling its box', () => {
+    const fitted = fitPolygonToBox(L_SHAPE, 600, 300);
+    expect(boundsOf(fitted)).toEqual({ x: 0, y: 0, width: 600, height: 300 });
+    expect(polygonArea(fitted)).toBeLessThan(600 * 300);
+  });
+
+  it('translates a flat ring rather than dividing by its zero extent', () => {
+    // A degenerate contour is rejected upstream by `isDegenerate`; this is here
+    // so that reaching the function anyway produces coordinates rather than NaN.
+    const fitted = fitPolygonToBox([p(10, 40), p(610, 40), p(310, 40)], 600, 0);
+    expect(fitted.every((point) => Number.isFinite(point.x) && Number.isFinite(point.y))).toBe(
+      true,
+    );
+    expect(boundsOf(fitted)).toEqual({ x: 0, y: 0, width: 600, height: 0 });
   });
 });
 

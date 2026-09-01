@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useReducer } from 'react';
 import { buildCutPlans, type CutPlan } from '../../domain/cutplan';
+import { fitPolygonToBox } from '../../domain/polygon';
 import type { Material, Part, Result, Stock } from '../../domain/types';
 import { solve } from '../../solver/index';
 import { BOOKSHELF_PRESET } from './presets';
@@ -29,6 +30,25 @@ let nextId = 1;
 function generateId(prefix: string): string {
   const idStr = (nextId++).toString(36);
   return `${prefix}-${Date.now().toString(36)}-${idStr}`;
+}
+
+/**
+ * Keep an edited part's outline on its bounding box.
+ *
+ * `Part.outline` is defined as spanning exactly `width` x `height`, and
+ * `validateInputs` enforces that as an **error** - one stale outline blocks
+ * solving for every material at once. A user retyping the width of a part they
+ * imported from an SVG would otherwise do exactly that, and be told about a
+ * polygon they have never seen and cannot edit.
+ *
+ * The shape stretches to the new size, which is what dragging a handle does in
+ * any drawing program, rather than being silently dropped - a part quietly
+ * turning back into a rectangle is the kind of change a woodworker discovers at
+ * the router.
+ */
+function resized(part: Part): Part {
+  if (part.outline === undefined) return part;
+  return { ...part, outline: fitPolygonToBox(part.outline, part.width, part.height) };
 }
 
 export function cutListReducer(state: AppState, action: CutListAction): AppState {
@@ -79,7 +99,7 @@ export function cutListReducer(state: AppState, action: CutListAction): AppState
     case 'UPDATE_PART':
       return {
         ...state,
-        parts: state.parts.map((p) => (p.id === action.id ? { ...p, ...action.part } : p)),
+        parts: state.parts.map((p) => (p.id === action.id ? resized({ ...p, ...action.part }) : p)),
       };
 
     case 'DELETE_PART':

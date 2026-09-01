@@ -396,6 +396,40 @@ export function translatePolygon(points: readonly Point[], dx: number, dy: numbe
   return points.map((p) => ({ x: p.x + dx, y: p.y + dy }));
 }
 
+/**
+ * Move and stretch a ring so its bounds are exactly `(0, 0, width, height)`.
+ *
+ * This is what makes `Part.outline`'s invariant hold in practice rather than in
+ * principle. `validateInputs` compares an outline's bounds to the part's
+ * `width`/`height` with `approxEq`, and raises `outline-bounds-mismatch` as an
+ * **error** that blocks solving for every material - so a ring that is a
+ * hundredth of a millimetre out is not a cosmetic problem. Three unrelated
+ * things push one out by about that much: float drift through a rotation,
+ * `simplify` shaving a vertex that happened to be the extreme one, and the
+ * importer's quantity grouping reporting the largest member's width alongside
+ * the first member's shape. One function absorbs all three, so no caller has to
+ * reason about which of them it is exposed to.
+ *
+ * The correction is a stretch rather than a translation because the alternative
+ * - reporting a part smaller than the ring inside it - is the one that produces
+ * a layout that does not fit. It is bounded by the tolerances of whatever fed
+ * it: at most `GROUP_TOLERANCE_MM` (0.5mm) across a part, which is below what a
+ * saw holds.
+ *
+ * An axis with no extent cannot be scaled and is only translated - a ring that
+ * degenerate is rejected upstream, and dividing by zero here would replace a
+ * clear failure with `NaN` coordinates.
+ */
+export function fitPolygonToBox(points: readonly Point[], width: number, height: number): Point[] {
+  const bounds = boundsOf(points);
+  const scaleX = bounds.width > EPSILON ? width / bounds.width : 1;
+  const scaleY = bounds.height > EPSILON ? height / bounds.height : 1;
+  return points.map((p) => ({
+    x: (p.x - bounds.x) * scaleX,
+    y: (p.y - bounds.y) * scaleY,
+  }));
+}
+
 // --- Separation and containment -------------------------------------------
 
 /**

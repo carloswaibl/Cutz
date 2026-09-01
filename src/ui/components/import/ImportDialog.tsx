@@ -387,6 +387,11 @@ export function ImportDialog({
               qty: Math.max(1, row.qty),
               materialId: row.materialId,
               rotationPolicy,
+              // Spread rather than assigned, so a rectangular row produces a
+              // `Part` with no `outline` key at all rather than one holding
+              // `undefined` - the two are the same to `partOutline()` but not
+              // to a project record round-tripping through IndexedDB.
+              ...(row.part.outline ? { outline: row.part.outline } : {}),
             }))
         : [],
     );

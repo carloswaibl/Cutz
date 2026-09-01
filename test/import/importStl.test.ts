@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { boundsOf, polygonArea } from '../../src/domain/polygon';
 import type { Part, SolverConfig, Stock } from '../../src/domain/types';
 import { validateInputs } from '../../src/domain/validate';
 import { MAX_FILE_BYTES } from '../../src/import/errors';
@@ -130,8 +131,43 @@ describe('real files from ImageToStl.com', () => {
       expect(part.width).toBeCloseTo(width, 1);
       expect(part.height).toBeCloseTo(height, 1);
       expect(part.angle).toBeCloseTo(angle, 1);
+
+      // These are image-traced silhouettes, so they are the corpus's only
+      // genuinely irregular real geometry - and the M7 claim on it is that the
+      // outline survives, squared to the part's own frame however the model was
+      // oriented in the file, and describes a shape smaller than its box.
+      expect(part.outline?.length ?? 0).toBeGreaterThan(8);
+      expect(boundsOf(part.outline ?? [])).toEqual({
+        x: 0,
+        y: 0,
+        width: part.width,
+        height: part.height,
+      });
+      expect(polygonArea(part.outline ?? [])).toBeLessThan(part.width * part.height);
     },
   );
+});
+
+describe('a slab that really is a rectangle', () => {
+  it('stores no outline, exactly as a typed part does not', () => {
+    const outcome = ok(importStl(buildBinaryStl(slabTriangles(400, 200, 18)), 'panel.stl'));
+    const part = outcome.parts[0];
+    // Which of a rectangle's two tied hull edges wins the minimum-area box is
+    // arbitrary and unchanged by M7, so the pair is the assertion, not the order.
+    expect([part?.width, part?.height].sort((a, b) => (a ?? 0) - (b ?? 0))).toEqual([200, 400]);
+    expect(part?.outline).toBeUndefined();
+  });
+
+  it('keeps a hole discarded rather than modelled', () => {
+    // `docs/plan-m7.md` §7 decision 9: only the outer outline changed in M7.
+    const bytes = buildBinaryStl(
+      slabWithHoleTriangles(400, 200, 18, { x0: 100, x1: 300, y0: 50, y1: 150 }),
+    );
+    const outcome = ok(importStl(bytes, 'holed.stl'));
+    expect(outcome.warnings.find((w) => w.kind === 'hole-discarded')?.count).toBe(1);
+    expect(outcome.parts).toHaveLength(1);
+    expect(outcome.parts[0]?.outline).toBeUndefined();
+  });
 });
 
 describe('a non-manifold mesh', () => {
@@ -287,6 +323,9 @@ describe('properties that must hold for every accepted file', () => {
 
   it.each(files)('$name produces parts that pass domain validation', ({ bytes }) => {
     const outcome = ok(importStl(bytes(), 'fixture.stl'));
+    // Outline carried across exactly as `ImportDialog.handleCommit` does, so
+    // `outline-bounds-mismatch` catches any ring that does not span its part's
+    // reported box - the same contract `importSvg.test.ts` checks.
     const parts: Part[] = outcome.parts.map((part, i) => ({
       id: `p${i}`,
       label: part.label,
@@ -295,6 +334,7 @@ describe('properties that must hold for every accepted file', () => {
       qty: part.qty,
       materialId: 'm1',
       rotationPolicy: 'free90',
+      ...(part.outline ? { outline: part.outline } : {}),
     }));
     const stock: Stock[] = [
       { id: 's1', materialId: 'm1', width: 2440, height: 1220, qty: 10, grainAxis: 'x' },
