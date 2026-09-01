@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import type { Point } from '../../src/domain/polygon';
 import { CLOSE_GAP_TOLERANCE_MM, type Contour, nestContours } from '../../src/import/contours';
-import type { Point } from '../../src/import/geometry';
 import { classifySubpath } from '../../src/import/svg/contours';
 import { flattenPath, type Subpath } from '../../src/import/svg/flatten';
 import { IDENTITY } from '../../src/import/svg/transform';
