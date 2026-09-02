@@ -48,7 +48,25 @@ function check(result: Result, parts: readonly Part[], sheets: readonly Stock[],
   return checkResult(result, { parts, stock: sheets, config });
 }
 
-describe('nestSolve', () => {
+/**
+ * Vitest's default is 5s, and these were flaky against it.
+ *
+ * A nest candidate rasterises every orientation of every part and scans a whole
+ * sheet's bitmap, so five of these tests run 1.2-3.6s on an idle machine - and
+ * the suite runs files in parallel, with `bench.test.ts` solving the same engine
+ * beside them. Under that contention they crossed 5s and failed for no reason a
+ * reader could act on. Measured across seven full-suite runs on `main` before
+ * M7 PR 7: two runs failed here, five passed.
+ *
+ * An explicit budget, not a faster test: what these assert - determinism, kerf
+ * separation at every kerf, beating a saw on half-box parts - is the milestone's
+ * reason to exist, and shrinking the inputs to fit a default would be measuring
+ * something smaller than the thing being claimed. Same reasoning and same idiom
+ * as `BENCH_TIMEOUT_MS` in `test/bench/bench.test.ts`.
+ */
+const NEST_SOLVE_TIMEOUT_MS = 60_000;
+
+describe('nestSolve', { timeout: NEST_SOLVE_TIMEOUT_MS }, () => {
   it('produces a layout that satisfies every invariant in nest mode', () => {
     const parts = [part({ id: 'gusset', qty: 12, outline: triangle(600, 400) })];
     const result = nestSolve(parts, [stock()], CONFIG);

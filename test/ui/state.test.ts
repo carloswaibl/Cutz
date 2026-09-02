@@ -83,6 +83,7 @@ describe('LOAD_PROJECT', () => {
     hoveredPartId: 'p-side',
     selectedMaterialId: 'mat-ply-34',
     showCutSequence: true,
+    projectGeneration: 0,
   };
 
   it('replaces the seven persisted fields with the loaded project', () => {
@@ -125,6 +126,37 @@ describe('LOAD_PROJECT', () => {
     expect(next.hoveredPartId).toBeNull();
     expect(next.selectedMaterialId).toBe('all');
   });
+
+  /**
+   * `useSolve` keys its "throw the previous layout away" reset off this, so a
+   * project switch never leaves the outgoing project's diagram on screen under
+   * the incoming project's parts. Two projects made from the same template
+   * share part and stock ids, so that diagram would resolve and render rather
+   * than being filtered out. Only a whole-project load counts - an edit must
+   * keep the previous layout visible while the next solve runs.
+   */
+  it('advances projectGeneration on load, and never on an edit', () => {
+    const loaded = cutListReducer(state, {
+      type: 'LOAD_PROJECT',
+      project: {
+        displayUnit: 'imperial-fraction',
+        fractionDenominator: 16,
+        materials: DRAWER_BOXES_PRESET.materials,
+        parts: DRAWER_BOXES_PRESET.parts,
+        stock: DRAWER_BOXES_PRESET.stock,
+        config: DRAWER_BOXES_PRESET.config,
+        showCutSequence: true,
+      },
+    });
+    expect(loaded.projectGeneration).toBe(state.projectGeneration + 1);
+
+    const edited = cutListReducer(loaded, {
+      type: 'UPDATE_PART',
+      id: loaded.parts[0]?.id ?? '',
+      part: { label: 'Renamed' },
+    });
+    expect(edited.projectGeneration).toBe(loaded.projectGeneration);
+  });
 });
 
 /**
@@ -164,6 +196,7 @@ describe('UPDATE_PART and imported outlines', () => {
     hoveredPartId: null,
     selectedMaterialId: 'all',
     showCutSequence: true,
+    projectGeneration: 0,
   };
 
   function updated(patch: Partial<Part>): Part {

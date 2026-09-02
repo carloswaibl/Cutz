@@ -18,9 +18,9 @@ import {
   updateProject,
 } from '../../storage/projects';
 import type { ProjectSummary } from '../../storage/types';
+import { createDebouncer } from './debounce';
 import {
   blankProjectInput,
-  createDebouncer,
   pickProjectFields,
   resolveFallbackAfterDelete,
   resolveInitialProject,

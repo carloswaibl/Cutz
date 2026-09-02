@@ -691,12 +691,114 @@ Exact scope may shift as each PR's own "what shipped" notes get added here.
   365.52 kB to 373.35 kB raw, 112.30 kB to 114.87 kB gzipped, no new dependency. No browser
   pass - nothing user-visible changes until PR 8.
 
-### PR 7 - `feat/async-solve` - off the render path
+### PR 7 - `feat/async-solve` - off the render path - **shipped**
 
 - `solveWorker.ts` and `useSolve.ts` per §3.6, with the measured numbers from PR 6 quoted in
   the PR description as the justification (§7 decision 8).
 - Tests: a superseded request's result is dropped; the sync fallback produces an identical
   layout to the worker for the same seed.
+
+**What shipped, and what changed on the way.**
+
+- **The worst case was never the 7s solve; it was nine of them.** §1 criterion 8 frames this
+  as `useCutListState.ts:156` blocking the render path, which is true and understates it.
+  `PartTable.tsx:107` dispatches `UPDATE_PART` on every *keystroke* of a part label, so every
+  character was a fresh `parts` array and a fresh solve. Measured in a real browser on `main`,
+  nest mode, the wall-cabinet preset: typing eight characters into a label froze the tab for
+  **21,549 ms** in one unbroken long task. The same eight characters on this branch cost
+  **87 ms** of main-thread work and ran **one** solve. That is a 200ms request debounce doing
+  the work, not the worker - which is why the debounce is in `solveClient.ts` and not an
+  afterthought. It debounces the *request*; iteration budgets are untouched, so §3.6's "no
+  wall-clock early stopping" and the determinism contract both still hold.
+- **Cancellation is a real `terminate()`, not just a dropped reply.** §3.6 lists
+  "cancellation, stale-response dropping" as though they were one thing. They are not: a
+  worker cannot be interrupted from outside, so ignoring a superseded solve's answer leaves it
+  burning a core and makes the *next* request queue behind it - the user waits two solves for
+  one edit. The client terminates the worker and respawns, but only when a request is genuinely
+  in flight, so the respawn's module parse is paid on an actual interruption and never on an
+  idle edit.
+- **Four modules, not §3.1's two, plus the debouncer moved out.** Confirmed with the project
+  owner before starting, on PR 5's `subproblems.ts` precedent. Two reasons, one of them a hard
+  build constraint. `solveWorker.ts` **cannot** import the client, because the client holds
+  `new Worker(new URL('./solveWorker.ts', ...))` and Vite would emit worker chunks
+  recursively - so the shared piece is `solveProtocol.ts`, which both sides import and neither
+  owns. And `CLAUDE.md`'s M6 rule puts logic that does not need React in a plain module with a
+  thin hook over it, precisely so it can be tested with `vi.useFakeTimers()` and no renderer;
+  stale-drop, cancellation and fallback are exactly that. `createDebouncer` moved from
+  `projectStore.ts` to its own `debounce.ts` rather than being imported out of a module whose
+  header calls itself "headless project-persistence logic".
+- **`runSolveRequest` flattening the error is load-bearing, not tidiness.** `SolverInputError`
+  is a class carrying `issues`, and `structuredClone` - which is what `postMessage` does -
+  drops the prototype and delivers a shapeless object. Flattening to `err.message` inside the
+  one function both transports call is what makes `solverError` the same `string | null`
+  whichever side produced it. The fake worker in `test/ui/solveClient.test.ts` round-trips both
+  directions through `structuredClone` for the same reason: the boundary is the only real
+  difference between the two paths, so every test pays it.
+- **`isSolving` is new user-visible surface, and PR 7 is what creates the need for it.**
+  Confirmed with the project owner. §3.6 keeps the last good result on screen while a solve
+  runs; in nest mode that is seconds of a stale diagram saying nothing - strictly worse
+  feedback than the freeze it replaces, which at least told the user the app was busy. A
+  floating chip and a dimmed diagram, plus a placeholder for the first solve of a project when
+  there is no previous layout to keep. Everything else nest-related stays in PR 8.
+- **The chip floats over the diagram rather than joining the toolbar above it.** In the toolbar
+  it was ~250px of extra content that wrapped the export cluster onto a second row, so the
+  buttons dropped and sprang back on every edit - a moving target for the whole debounce plus
+  solve. Caught in the browser, not in a test. Floating costs no layout, uses the same idiom as
+  the zoom cluster in the opposite corner, and sits outside the dimmed element so the one thing
+  explaining the dimming is not itself half-faded.
+- **`solverError` had been computed since M1 and rendered nowhere.** `grep -rn solverError src/`
+  found it only in `state/types.ts`. Any `validateInputs` error - a duplicate part id, an edge
+  trim entered in the wrong unit, an `outline-bounds-mismatch` - made `solve()` throw, `result`
+  go null, and `App.tsx`'s `{state.result && …}` delete the entire results section with no
+  explanation. Confirmed with the owner that PR 7 owns the field and so owns the gap.
+- **`SolverInputError`'s message lost its prefix, because PR 7 is the first release that shows
+  it to a person.** It read `the solver was given invalid input: …`, which was fine for a
+  console - except `name` is already `SolverInputError`, so it said it twice, and now a panel
+  headed "Cannot solve this cut list" said it a third time before a red paragraph beginning
+  lowercase mid-sentence. Each issue message is already a whole sentence written for whoever
+  typed the value, so the message is now just those. One test asserted the prefix and it was
+  this PR's own.
+- **`AppState.projectGeneration` exists because "keep the previous layout" is right for an edit
+  and wrong for a switch.** Found in the browser: switching projects left the *outgoing*
+  project's diagram on screen while the incoming one solved. Usually it resolves to nothing and
+  disappears - but two projects made from the same template share part and stock ids, so it
+  resolves against the new project's data and renders a plausible, wrong diagram. A counter
+  bumped only by `LOAD_PROJECT` (transient, like `activeSheetIndex`; not in `ProjectFields`)
+  clears the client first and requests second. The reset effect is declared *above* the request
+  effect deliberately - React runs a component's effects in declaration order within a commit,
+  and a load changes both in one.
+- **A pre-existing flake in `test/solver/nest/solver.test.ts` was fixed here.** Not caused by
+  this PR: five of its tests run 1.2-3.6s against Vitest's 5s default, and the suite runs files
+  in parallel with `bench.test.ts` solving the same engine beside them. Reproduced on `main` -
+  **two of seven full-suite runs failed**, on assertions that cannot vary. An explicit
+  `NEST_SOLVE_TIMEOUT_MS` on the describe block, same idiom as `BENCH_TIMEOUT_MS`; verified by
+  setting it to 1ms and watching the right tests fail. Shrinking the inputs to fit the default
+  was the wrong fix - determinism, kerf separation at every kerf and beating a saw on half-box
+  parts are the milestone's reason to exist.
+- Measured in Chrome against `main`, both builds served from `vite preview`, wall-cabinet
+  preset in nest mode at the default `balanced`:
+
+  | Interaction | `main` main-thread block | This branch | Solves run |
+  |---|---|---|---|
+  | Load a project | 3291 ms (one long task) | 0 long tasks | 1 → 1 |
+  | Re-roll the seed | 2744 ms | 0 long tasks | 1 → 1 |
+  | Type 8 characters into a part label | 21,549 ms | 87 ms | 8 → 1 |
+
+  The solve itself still takes ~3.5s; the chip appears at 29ms and clears at 3516ms. It just no
+  longer happens on the render path.
+- Browser pass, on the production build: the worker chunk is fetched and instantiated (a
+  `resource` entry for `solveWorker-*.js`); the chip appears and the diagram dims; an invalid
+  edge trim shows the error panel and correcting it recovers; and with `createWorkerTransport`
+  temporarily forced to throw, the app still solves, never fetches the worker chunk, and
+  returns a **byte-identical layout** for the same seed - 27.0/17.6/16.8/32.4% across four
+  sheets either way.
+- Verified: `typecheck`, `lint` and `build` clean, `test:run` **1008 passing** (up from 994)
+  across three consecutive full runs, and `npm run bench` leaving `baseline.json` untouched -
+  all eleven entries unmoved, which is true by construction since neither `src/solver/` nor
+  `src/domain/` is touched. Bundle: the main chunk goes 373.35 → 376.63 kB raw and
+  114.87 → 115.98 kB gzipped (the client, the hook, the protocol and the status components),
+  plus a new **23.22 kB** `solveWorker` chunk fetched off the critical path. No new dependency,
+  per §1 criterion 10.
 
 ### PR 8 - `feat/nest-ui` - make it visible
 

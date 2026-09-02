@@ -16,6 +16,7 @@ function baseState(): AppState {
     hoveredPartId: null,
     selectedMaterialId: 'all',
     showCutSequence: true,
+    projectGeneration: 0,
   };
 }
 

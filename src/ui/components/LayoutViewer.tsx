@@ -14,6 +14,7 @@ import { sheetFileName } from '../../export/filename';
 import type { DisplayUnit } from '../state/types';
 import { CutSequenceList } from './print/CutSequenceList';
 import { SheetSvg } from './SheetSvg';
+import { SolvingChip } from './SolverStatus';
 
 /**
  * The SVG exporter is loaded on demand.
@@ -71,6 +72,12 @@ interface LayoutViewerProps {
   showCutSequence: boolean;
   onShowCutSequenceChange: (show: boolean) => void;
   cutPlanError: string | null;
+  /**
+   * A newer solve is running and these layouts are the previous answer. Solving
+   * is asynchronous as of M7 PR 7, so this is the difference between a diagram
+   * that is current and one that merely looks it.
+   */
+  isSolving: boolean;
 }
 
 export function LayoutViewer({
@@ -89,6 +96,7 @@ export function LayoutViewer({
   showCutSequence,
   onShowCutSequenceChange,
   cutPlanError,
+  isSolving,
 }: LayoutViewerProps) {
   const [exportError, setExportError] = useState<string | null>(null);
 
@@ -313,19 +321,43 @@ export function LayoutViewer({
             ))}
           </div>
 
-          {/* Viewer Container */}
-          <div className="relative bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden min-h-[500px]">
-            <TransformWrapper
-              initialScale={1}
-              minScale={0.1}
-              maxScale={10}
-              centerOnInit
-              wheel={{ step: 0.01 }}
-              pinch={{ step: 1 }}
+          {/* Viewer Container.
+
+              Dimmed while a solve is in flight. The zoom cluster is inside it
+              and dims too, which is right: what it pans around is stale. Panning
+              and exporting still work - the previous layout is a real layout,
+              just not the newest one.
+
+              The solving chip floats over the top-left corner rather than
+              joining the toolbar above. In the toolbar it was ~250px of extra
+              content that wrapped the export cluster onto a second row, so the
+              buttons jumped down and back on every edit - a moving target over
+              the whole debounce plus solve. Floating costs no layout at all, and
+              it is the same idiom (and the opposite corner) as the zoom cluster.
+              It sits outside the dimmed element so the one thing explaining the
+              dimming is not itself half-faded. */}
+          <div className="relative">
+            {isSolving && (
+              <div className="absolute top-4 left-4 z-20">
+                <SolvingChip />
+              </div>
+            )}
+            <div
+              className={`relative bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden min-h-[500px] transition-opacity ${
+                isSolving ? 'opacity-50' : ''
+              }`}
             >
-              {({ zoomIn, zoomOut, resetTransform }) => (
-                <>
-                  {/* Zoom controls, and only these, float over the canvas.
+              <TransformWrapper
+                initialScale={1}
+                minScale={0.1}
+                maxScale={10}
+                centerOnInit
+                wheel={{ step: 0.01 }}
+                pinch={{ step: 1 }}
+              >
+                {({ zoomIn, zoomOut, resetTransform }) => (
+                  <>
+                    {/* Zoom controls, and only these, float over the canvas.
 
                     A floating cluster is the right idiom for pan/zoom, but it
                     has to be small enough to sit in the margin beside the
@@ -336,81 +368,81 @@ export function LayoutViewer({
                     the cut diagram is the thing this tool produces, so nothing
                     that wide gets to sit on top of it. They are a toolbar
                     above the canvas now. */}
-                  <div className="absolute top-4 right-4 z-10">
-                    <div className="flex bg-slate-950/80 backdrop-blur-sm border border-slate-700 rounded-lg shadow-lg overflow-hidden">
-                      <button
-                        type="button"
-                        onClick={() => zoomIn()}
-                        className="p-2 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors border-r border-slate-700"
-                        title="Zoom In"
-                      >
-                        <svg
-                          aria-hidden="true"
-                          xmlns="http://www.w3.org/2000/svg"
-                          width="20"
-                          height="20"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
+                    <div className="absolute top-4 right-4 z-10">
+                      <div className="flex bg-slate-950/80 backdrop-blur-sm border border-slate-700 rounded-lg shadow-lg overflow-hidden">
+                        <button
+                          type="button"
+                          onClick={() => zoomIn()}
+                          className="p-2 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors border-r border-slate-700"
+                          title="Zoom In"
                         >
-                          <circle cx="11" cy="11" r="8" />
-                          <line x1="21" x2="16.65" y1="21" y2="16.65" />
-                          <line x1="11" x2="11" y1="8" y2="14" />
-                          <line x1="8" x2="14" y1="11" y2="11" />
-                        </svg>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => zoomOut()}
-                        className="p-2 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors border-r border-slate-700"
-                        title="Zoom Out"
-                      >
-                        <svg
-                          aria-hidden="true"
-                          xmlns="http://www.w3.org/2000/svg"
-                          width="20"
-                          height="20"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
+                          <svg
+                            aria-hidden="true"
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="20"
+                            height="20"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <circle cx="11" cy="11" r="8" />
+                            <line x1="21" x2="16.65" y1="21" y2="16.65" />
+                            <line x1="11" x2="11" y1="8" y2="14" />
+                            <line x1="8" x2="14" y1="11" y2="11" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => zoomOut()}
+                          className="p-2 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors border-r border-slate-700"
+                          title="Zoom Out"
                         >
-                          <circle cx="11" cy="11" r="8" />
-                          <line x1="21" x2="16.65" y1="21" y2="16.65" />
-                          <line x1="8" x2="14" y1="11" y2="11" />
-                        </svg>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => resetTransform()}
-                        className="p-2 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
-                        title="Reset View"
-                      >
-                        <svg
-                          aria-hidden="true"
-                          xmlns="http://www.w3.org/2000/svg"
-                          width="20"
-                          height="20"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
+                          <svg
+                            aria-hidden="true"
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="20"
+                            height="20"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <circle cx="11" cy="11" r="8" />
+                            <line x1="21" x2="16.65" y1="21" y2="16.65" />
+                            <line x1="8" x2="14" y1="11" y2="11" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => resetTransform()}
+                          className="p-2 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+                          title="Reset View"
                         >
-                          <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                          <path d="M3 3v5h5" />
-                        </svg>
-                      </button>
+                          <svg
+                            aria-hidden="true"
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="20"
+                            height="20"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                            <path d="M3 3v5h5" />
+                          </svg>
+                        </button>
+                      </div>
                     </div>
-                  </div>
 
-                  {/*
+                    {/*
                 Pan/Zoom Canvas.
 
                 Height, not width, is what sizes the diagram: sheet goods are
@@ -425,45 +457,46 @@ export function LayoutViewer({
                 a wide screen: the width the diagram cannot use is width the
                 step table can.
               */}
-                  <TransformComponent
-                    wrapperStyle={{ width: '100%', height: 'clamp(500px, 72vh, 820px)' }}
-                    contentStyle={{
-                      width: '100%',
-                      height: '100%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: '90%',
-                        height: '90%',
+                    <TransformComponent
+                      wrapperStyle={{ width: '100%', height: 'clamp(500px, 72vh, 820px)' }}
+                      contentStyle={{
+                        width: '100%',
+                        height: '100%',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                       }}
                     >
-                      <SheetSvg
-                        key={activeLayout.layout.stockInstanceId}
-                        layout={activeLayout.layout}
-                        stock={activeLayout.stock}
-                        parts={parts}
-                        material={activeLayout.material}
-                        config={config}
-                        displayUnit={displayUnit}
-                        fractionDenominator={fractionDenominator}
-                        hoveredPartId={hoveredPartId}
-                        onHoverPart={onHoverPart}
-                        cutPlan={activePlan}
-                        showCutLines={activeOverlay}
-                        showPartNumbers={activeOverlay}
-                      />
-                    </div>
-                  </TransformComponent>
-                </>
-              )}
-            </TransformWrapper>
+                      <div
+                        style={{
+                          width: '90%',
+                          height: '90%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <SheetSvg
+                          key={activeLayout.layout.stockInstanceId}
+                          layout={activeLayout.layout}
+                          stock={activeLayout.stock}
+                          parts={parts}
+                          material={activeLayout.material}
+                          config={config}
+                          displayUnit={displayUnit}
+                          fractionDenominator={fractionDenominator}
+                          hoveredPartId={hoveredPartId}
+                          onHoverPart={onHoverPart}
+                          cutPlan={activePlan}
+                          showCutLines={activeOverlay}
+                          showPartNumbers={activeOverlay}
+                        />
+                      </div>
+                    </TransformComponent>
+                  </>
+                )}
+              </TransformWrapper>
+            </div>
           </div>
         </div>
         {/* Cut sequence panel.
