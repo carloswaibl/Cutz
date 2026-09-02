@@ -29,6 +29,21 @@
     "wastePct": 0.03380811609782319,
     "unplacedCount": 0
   },
+  "nest-imported-brackets": {
+    "sheetsUsed": 1,
+    "wastePct": 0.6062376374019081,
+    "unplacedCount": 0
+  },
+  "nest-l-brackets": {
+    "sheetsUsed": 2,
+    "wastePct": 0.4625100779360387,
+    "unplacedCount": 0
+  },
+  "nest-triangles": {
+    "sheetsUsed": 1,
+    "wastePct": 0.3550120935232465,
+    "unplacedCount": 0
+  },
   "tight-fit": {
     "sheetsUsed": 1,
     "wastePct": 0.006500244140624667,

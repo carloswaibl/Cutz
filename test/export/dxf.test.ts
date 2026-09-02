@@ -397,6 +397,10 @@ describe('renderSheetDxf structure', () => {
 });
 
 describe('renderSheetDxf geometry', () => {
+  // Every fixture, nest ones included - a turned part's footprint is the bounds
+  // of its rotated outline, and a writer that got that wrong would produce a
+  // drawing that looks plausible and cuts wrong. Solving three nested sheets is
+  // why this one carries a benchmark's time budget.
   it('round-trips every placement on every fixture', () => {
     // The load-bearing test. Parse the part outlines back out, undo the Y flip
     // and the unit scale, and require what comes back to be exactly the rects
@@ -415,7 +419,7 @@ describe('renderSheetDxf geometry', () => {
         expectRectsClose(actual, expected);
       }
     }
-  });
+  }, 120_000);
 
   it('round-trips in inches too', () => {
     // The case that catches a 25.4x scale error, which otherwise produces a

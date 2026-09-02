@@ -52,7 +52,7 @@ function withSample(mutate: (fixture: Record<string, unknown>) => void): () => v
 }
 
 describe('the fixture set', () => {
-  it('has every fixture named in the M1 plan', () => {
+  it('has every fixture named in the M1 plan, plus M7 nesting', () => {
     expect(FIXTURES.map((fixture) => fixture.name)).toEqual([
       'bookshelf',
       'cabinet-carcass',
@@ -61,15 +61,43 @@ describe('the fixture set', () => {
       'grain-locked-panels',
       'insufficient-stock',
       'mixed-stock',
+      'nest-imported-brackets',
+      'nest-l-brackets',
+      'nest-triangles',
       'oversized-part',
       'tight-fit',
       'workbench-cabinet',
     ]);
   });
 
-  it('holds out exactly the two fixtures no heuristic may be tuned against', () => {
+  it('holds out one fixture per engine, which no heuristic may be tuned against', () => {
     const heldOut = FIXTURES.filter((fixture) => fixture.role === 'held-out');
-    expect(heldOut.map((fixture) => fixture.name)).toEqual(['grain-locked-panels', 'mixed-stock']);
+    // The nester arrived with its own tunable constants - grid resolution,
+    // restart budgets, the order parts are offered in - so it needs the same
+    // guard the guillotine engine has had since M1, not the guillotine
+    // fixtures' guard, which it can pass without being any good at nesting.
+    expect(heldOut.map((fixture) => fixture.name)).toEqual([
+      'grain-locked-panels',
+      'mixed-stock',
+      'nest-imported-brackets',
+    ]);
+  });
+
+  it('solves the nesting fixtures with the nesting engine', () => {
+    // A nest fixture that forgot its mode would be silently benchmarked as a
+    // table-saw project, and would quietly pass - the saw is perfectly capable
+    // of cutting the bounding boxes, just wastefully.
+    const nesting = FIXTURES.filter((fixture) => fixture.config.mode === 'nest');
+    expect(nesting.map((fixture) => fixture.name)).toEqual([
+      'nest-imported-brackets',
+      'nest-l-brackets',
+      'nest-triangles',
+    ]);
+    for (const fixture of nesting) {
+      // Nesting a set of rectangles would measure nothing the guillotine
+      // fixtures do not already measure.
+      expect(fixture.parts.some((part) => part.outline !== undefined)).toBe(true);
+    }
   });
 
   it('excludes only the unsatisfiable fixtures from the waste benchmark', () => {

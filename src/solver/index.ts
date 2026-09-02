@@ -9,43 +9,33 @@
  */
 
 import type { Part, Result, SolverConfig, SolverMode, Stock } from '../domain/types';
-import { solverMode, validateInputs } from '../domain/validate';
-import { SolverInputError } from './errors';
+import { solverMode } from '../domain/validate';
 import { improveGuillotine } from './improve';
+import { nestSolve } from './nest';
 import type { Solver } from './types';
 
 export { SolverInputError } from './errors';
 export { GuillotineSolver, packGuillotine } from './guillotine';
 export { ImprovementSolver, improveGuillotine } from './improve';
+export { NestSolver, nestSolve } from './nest';
 export type { Solver } from './types';
 
 type Engine = (parts: readonly Part[], stock: readonly Stock[], config: SolverConfig) => Result;
-
-/**
- * The placeholder standing in the registry until `src/solver/nest/` exists.
- *
- * `validateInputs` reports `unsupported-solver-mode` as an error for `'nest'`,
- * so this always throws with a message the user can act on. It never falls back
- * to a guillotine layout: handing a router a table-saw packing while
- * `checkResult` has stopped asking whether that packing is cuttable is exactly
- * the silent downgrade the mode-aware validator exists to prevent.
- *
- * `docs/plan-m7.md` §5 PR 6 replaces this entry with the nesting engine and
- * deletes the `unsupported-solver-mode` issue in the same change.
- */
-const nestNotYetAvailable: Engine = (parts, stock, config) => {
-  throw new SolverInputError(validateInputs(parts, stock, config));
-};
 
 /**
  * Which engine serves which machine.
  *
  * Total over `SolverMode` on purpose: adding a mode to the domain type without
  * an engine behind it should fail to typecheck rather than fail at runtime.
+ *
+ * This module is the only thing allowed to reach inside either engine's
+ * directory. Both `guillotine/index.ts` and `nest/index.ts` say so in their own
+ * headers, and it is what keeps `solve()`'s callers from ever learning which one
+ * answered.
  */
 const ENGINES: Record<SolverMode, Engine> = {
   guillotine: improveGuillotine,
-  nest: nestNotYetAvailable,
+  nest: nestSolve,
 };
 
 /**

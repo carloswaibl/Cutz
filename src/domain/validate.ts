@@ -95,7 +95,6 @@ export type InputIssue = IssueMeta &
     | { kind: 'outline-too-few-points'; partId: string; points: number }
     | { kind: 'outline-bounds-mismatch'; partId: string; bounds: Rect }
     | { kind: 'outline-self-intersecting'; partId: string }
-    | { kind: 'unsupported-solver-mode'; mode: SolverMode }
   );
 
 export function hasErrors(issues: readonly InputIssue[]): boolean {
@@ -132,8 +131,13 @@ const DEFAULT_ROTATION_STEPS = 4;
  * because a half turn keeps the grain running along the same axis and every
  * other step does not. On an asymmetric outline that half turn is a real
  * packing win, and one `rotated: boolean` could never express.
+ *
+ * Exported because `solver/nest/` searches under exactly this constraint. Two
+ * copies of the grain rule is how an engine ends up producing layouts its own
+ * checker rejects, or - the worse direction - ones the checker accepts and a
+ * woodworker would not.
  */
-function allowedAngles(part: Part, mode: SolverMode, config: SolverConfig): number[] {
+export function allowedAngles(part: Part, mode: SolverMode, config: SolverConfig): number[] {
   if (part.rotationPolicy === 'locked') return mode === 'guillotine' ? [0] : [0, 180];
   if (mode === 'guillotine') return [0, 90];
   const steps = config.rotationSteps ?? DEFAULT_ROTATION_STEPS;
@@ -183,21 +187,6 @@ export function validateInputs(
 ): InputIssue[] {
   const issues: InputIssue[] = [];
   const mode = solverMode(config);
-
-  // The nesting engine arrives in a later M7 PR. Until it does, accepting
-  // `mode: 'nest'` would produce a guillotine layout while `checkResult` stopped
-  // asking whether that layout is cuttable - a config value that quietly
-  // weakens validation and changes nothing else. Refusing it is cheap, and this
-  // issue is deleted the moment `src/solver/nest/` exists.
-  if (mode === 'nest') {
-    issues.push({
-      kind: 'unsupported-solver-mode',
-      severity: 'error',
-      mode,
-      message:
-        'Free-form nesting for a CNC router is not available yet. Set the machine to Table saw.',
-    });
-  }
 
   const kerfOk = Number.isFinite(config.kerf) && config.kerf >= 0;
   if (!kerfOk) {

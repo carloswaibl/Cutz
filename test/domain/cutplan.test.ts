@@ -10,7 +10,7 @@ import { bottom, EPSILON, type Rect, right } from '../../src/domain/geometry';
 import { placementRect } from '../../src/domain/polygon';
 import type { Layout, Material, Part, Placement, Stock } from '../../src/domain/types';
 import { solve } from '../../src/solver';
-import { loadFixtures } from '../fixtures/index';
+import { guillotineFixtures } from '../fixtures/index';
 
 // --- Fixtures -------------------------------------------------------------
 //
@@ -245,10 +245,14 @@ interface TimingRow {
   Steps: number;
 }
 
-describe('buildCutPlan - replayed against every fixture', () => {
+// Guillotine fixtures only. A cut plan *is* the edge-to-edge cut sequence, and a
+// nested layout has none by construction - `docs/plan-m7.md` §2 keeps
+// `cutplan.ts` guillotine-only for exactly that reason. Replaying one here would
+// assert that the nester failed to be a table saw.
+describe('buildCutPlan - replayed against every guillotine fixture', () => {
   const timings: TimingRow[] = [];
 
-  describe.each(loadFixtures().map((fixture) => [fixture.name, fixture] as const))(
+  describe.each(guillotineFixtures().map((fixture) => [fixture.name, fixture] as const))(
     '%s',
     (_name, fixture) => {
       it('cuts back to exactly the placements the solver produced', () => {

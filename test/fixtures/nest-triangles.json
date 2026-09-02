@@ -1,0 +1,54 @@
+{
+  "name": "nest-triangles",
+  "description": "Sixteen right-triangle gussets, 600mm x 400mm, cut on a CNC router. The point of the fixture is that two of them tile their own bounding box exactly: one square, one turned a half turn, hypotenuse to hypotenuse. A table saw cannot do that - it charges each triangle the whole 600 x 400 box, fits 4 across and 3 down at a 3mm kerf, and so needs 12 boxes per sheet and two sheets for sixteen. A router pairs them into 8 boxes, which fit on one sheet with room to spare. Hand-checked: 4 x 3 boxes per sheet either way, 1 triangle per box on a saw against 2 on a router.",
+  "role": "benchmark",
+  "materials": [
+    {
+      "id": "ply18",
+      "name": "18mm Baltic birch ply",
+      "thickness": 18,
+      "hasGrain": false
+    }
+  ],
+  "parts": [
+    {
+      "id": "gusset",
+      "label": "Corner gusset",
+      "width": 600,
+      "height": 400,
+      "qty": 16,
+      "materialId": "ply18",
+      "rotationPolicy": "free90",
+      "outline": [
+        {
+          "x": 0,
+          "y": 0
+        },
+        {
+          "x": 600,
+          "y": 0
+        },
+        {
+          "x": 0,
+          "y": 400
+        }
+      ]
+    }
+  ],
+  "stock": [
+    {
+      "id": "sheet",
+      "materialId": "ply18",
+      "width": 2440,
+      "height": 1220,
+      "qty": 3,
+      "grainAxis": "x"
+    }
+  ],
+  "config": {
+    "kerf": 3,
+    "edgeTrim": 5,
+    "seed": 1,
+    "mode": "nest"
+  }
+}

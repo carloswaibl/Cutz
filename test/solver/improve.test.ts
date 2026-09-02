@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { checkResult } from '../../src/domain/validate';
 import { SolverInputError } from '../../src/solver/errors';
 import { ImprovementSolver, improveGuillotine } from '../../src/solver/improve';
-import { loadFixtures } from '../fixtures/index';
+import { guillotineFixtures, loadFixtures } from '../fixtures/index';
 
 describe('ImprovementSolver / improveGuillotine', () => {
   it('implements the Solver interface', () => {
@@ -20,7 +20,10 @@ describe('ImprovementSolver / improveGuillotine', () => {
   });
 
   it('satisfies all Result invariants on benchmark fixtures', () => {
-    for (const fixture of loadFixtures()) {
+    // Guillotine fixtures only: a nest fixture's config asks for nest mode, so
+    // checking a table-saw layout against it would measure the saw's rectangles
+    // with a router's polygon rules and fail every time - correctly.
+    for (const fixture of guillotineFixtures()) {
       const result = improveGuillotine(fixture.parts, fixture.stock, fixture.config);
       const outcome = checkResult(result, {
         parts: fixture.parts,
