@@ -27,6 +27,10 @@ describe('main solver module (src/solver/index.ts)', () => {
     expect(res1).toEqual(res2);
   });
 
+  // Deliberately every fixture, nest ones included: `solve()` dispatches on each
+  // fixture's own mode and `checkResult` validates against that same mode, so
+  // this is the one sweep that exercises both engines end to end. It is also why
+  // it needs a benchmark's time budget rather than a unit test's.
   it('solves all fixtures cleanly with valid invariants', () => {
     for (const fixture of loadFixtures()) {
       const result = solve(fixture.parts, fixture.stock, fixture.config);
@@ -39,7 +43,7 @@ describe('main solver module (src/solver/index.ts)', () => {
       expect(outcome.status).toBe('valid');
       expect(outcome.violations).toEqual([]);
     }
-  });
+  }, 120_000);
 
   it('defaults to the guillotine engine when no mode is set', () => {
     const fixture = loadFixtures()[0];
@@ -56,25 +60,22 @@ describe('main solver module (src/solver/index.ts)', () => {
     expect(implicit).toEqual(explicit);
   });
 
-  it('refuses nest mode rather than quietly returning a table-saw layout', () => {
+  it('dispatches nest mode to the nesting engine, not to guillotine', () => {
     const fixture = loadFixtures()[0];
     if (!fixture) throw new Error('No fixture');
 
-    // The engine arrives in M7 PR 6. Until it does, packing rectangles for a
-    // router while `checkResult` has stopped asking whether the layout is
-    // guillotine-decomposable would be a silent downgrade - the user would
-    // learn about it at the machine.
-    let thrown: unknown;
-    try {
-      solve(fixture.parts, fixture.stock, { ...fixture.config, mode: 'nest' });
-    } catch (error) {
-      thrown = error;
-    }
+    const nested = solve(fixture.parts, fixture.stock, { ...fixture.config, mode: 'nest' });
 
-    expect(thrown).toBeInstanceOf(SolverInputError);
-    expect((thrown as SolverInputError).issues.map((issue) => issue.kind)).toContain(
-      'unsupported-solver-mode',
-    );
+    // The registry is the only thing standing between a router project and a
+    // table-saw layout, and the two engines are not interchangeable: a nested
+    // result is validated against polygons and has no cut sequence at all.
+    // Checking it in nest mode is what proves nest mode is what produced it.
+    const outcome = checkResult(nested, {
+      parts: fixture.parts,
+      stock: fixture.stock,
+      config: { ...fixture.config, mode: 'nest' },
+    });
+    expect(outcome.violations).toEqual([]);
   });
 
   it('re-exports SolverInputError', () => {

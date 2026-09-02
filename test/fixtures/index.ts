@@ -24,7 +24,17 @@
 
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import type { Material, Part, SolverConfig, Stock, UnplacedPart } from '../../src/domain/types';
+import { approxEq } from '../../src/domain/geometry';
+import { boundsOf } from '../../src/domain/polygon';
+import type {
+  Material,
+  Part,
+  Point,
+  SolverConfig,
+  SolverMode,
+  Stock,
+  UnplacedPart,
+} from '../../src/domain/types';
 
 /**
  * What a fixture is for.
@@ -139,9 +149,33 @@ function parseMaterial(file: string, path: Path, value: unknown): Material {
   };
 }
 
+/**
+ * A part's true outline, when it has one.
+ *
+ * Optional, and absent is the common case - a rectangle is its own bounding box
+ * and stores nothing, exactly as the importers leave it. Three points is the
+ * floor because two make a line, not a shape.
+ */
+function parseOutline(file: string, path: Path, value: unknown): Point[] {
+  const raw = requireArray(file, path, value);
+  if (raw.length < 3) fail(file, path, `must have at least 3 points, got ${raw.length}`);
+  return raw.map((entry, i) => {
+    const point = requireRecord(file, `${path}[${i}]`, entry);
+    const x = point.x;
+    const y = point.y;
+    if (typeof x !== 'number' || !Number.isFinite(x)) {
+      fail(file, `${path}[${i}].x`, `must be a finite number, got ${JSON.stringify(x)}`);
+    }
+    if (typeof y !== 'number' || !Number.isFinite(y)) {
+      fail(file, `${path}[${i}].y`, `must be a finite number, got ${JSON.stringify(y)}`);
+    }
+    return { x, y };
+  });
+}
+
 function parsePart(file: string, path: Path, value: unknown): Part {
   const raw = requireRecord(file, path, value);
-  return {
+  const base = {
     id: requireString(file, `${path}.id`, raw.id),
     label: requireString(file, `${path}.label`, raw.label),
     width: requirePositiveNumber(file, `${path}.width`, raw.width),
@@ -153,6 +187,11 @@ function parsePart(file: string, path: Path, value: unknown): Part {
       'free90',
     ] as const),
   };
+  // Built two ways rather than assigning `undefined`: under
+  // `exactOptionalPropertyTypes` an absent property and one holding `undefined`
+  // are different things, and a rectangle's outline is genuinely absent.
+  if (raw.outline === undefined) return base;
+  return { ...base, outline: parseOutline(file, `${path}.outline`, raw.outline) };
 }
 
 function parseStock(file: string, path: Path, value: unknown): Stock {
@@ -173,11 +212,29 @@ function parseConfig(file: string, path: Path, value: unknown): SolverConfig {
   if (!Number.isSafeInteger(seed)) {
     fail(file, `${path}.seed`, `must be a whole number, got ${JSON.stringify(seed)}`);
   }
-  return {
+  const config: SolverConfig = {
     kerf: requireLength(file, `${path}.kerf`, raw.kerf),
     edgeTrim: requireLength(file, `${path}.edgeTrim`, raw.edgeTrim),
     seed: seed as number,
   };
+
+  // Both optional, and absent means the domain default - guillotine at four
+  // steps - which is what every fixture written before M7 gets without being
+  // edited. Same reason `effort` is not parsed here: the bench varies it.
+  if (raw.mode !== undefined) {
+    config.mode = requireEnum<SolverMode>(file, `${path}.mode`, raw.mode, [
+      'guillotine',
+      'nest',
+    ] as const);
+  }
+  if (raw.rotationSteps !== undefined) {
+    const steps = raw.rotationSteps;
+    if (steps !== 2 && steps !== 4 && steps !== 12 && steps !== 24) {
+      fail(file, `${path}.rotationSteps`, `must be 2, 4, 12 or 24, got ${JSON.stringify(steps)}`);
+    }
+    config.rotationSteps = steps;
+  }
+  return config;
 }
 
 // --- Cross-checks --------------------------------------------------------
@@ -221,6 +278,30 @@ function crossCheck(file: string, fixture: Fixture): void {
         `part "${part.id}"`,
         `is grain-locked but its material "${material.id}" has no grain`,
       );
+    }
+
+    // `Part.outline`'s invariant, checked here rather than left to
+    // `validateInputs`. A stale polygon is an *error* there, and one bad fixture
+    // would surface as every material failing to solve at once - a stack trace
+    // naming the file and the offending bounds is a far better first thing to
+    // see. Hand-authored outlines drift the moment a width is edited without
+    // the ring, which is exactly the mistake only a fixture can make.
+    if (part.outline !== undefined) {
+      const bounds = boundsOf(part.outline);
+      if (
+        !approxEq(bounds.x, 0) ||
+        !approxEq(bounds.y, 0) ||
+        !approxEq(bounds.width, part.width) ||
+        !approxEq(bounds.height, part.height)
+      ) {
+        fail(
+          file,
+          `part "${part.id}"`,
+          `declares ${part.width} x ${part.height} but its outline spans ` +
+            `${bounds.width} x ${bounds.height} from (${bounds.x}, ${bounds.y}). ` +
+            'An outline must be anchored at the origin and fill its bounding box exactly.',
+        );
+      }
     }
   }
 
@@ -342,6 +423,22 @@ export function loadFixture(name: string): Fixture {
 /** Fixtures the waste benchmark measures - everything except the unsatisfiable ones. */
 export function benchmarkFixtures(): Fixture[] {
   return loadFixtures().filter((fixture) => fixture.role !== 'correctness');
+}
+
+/**
+ * Only the fixtures a table saw is meant to cut.
+ *
+ * M7 added fixtures whose parts are triangles and hooks, solved by the nesting
+ * engine. Anything that asserts something specifically about guillotine work -
+ * that a layout decomposes into edge-to-edge cuts, that waste comes in under
+ * M1's bar, that the free-rectangle packer beats a naive row packer - has to ask
+ * for these rather than for every fixture, because none of those claims is even
+ * meaningful about a nested layout. Suites that are engine-agnostic (`solve()`
+ * dispatching on the fixture's own mode, DXF round-tripping whatever came back)
+ * deliberately still take the whole set.
+ */
+export function guillotineFixtures(): Fixture[] {
+  return loadFixtures().filter((fixture) => (fixture.config.mode ?? 'guillotine') === 'guillotine');
 }
 
 /** Exposed for the loader's own tests, which need to feed it deliberately bad data. */

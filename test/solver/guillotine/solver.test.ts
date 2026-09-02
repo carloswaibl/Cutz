@@ -4,9 +4,13 @@ import type { Part, SolverConfig, Stock } from '../../../src/domain/types';
 import { checkResult } from '../../../src/domain/validate';
 import { SolverInputError } from '../../../src/solver/errors';
 import { GuillotineSolver, packGuillotine } from '../../../src/solver/guillotine';
-import { type Fixture, loadFixtures } from '../../fixtures/index';
+import { type Fixture, guillotineFixtures } from '../../fixtures/index';
 
-const FIXTURES = loadFixtures();
+// Every claim in this file is about a table saw - decomposability, M1's waste
+// bar, beating a naive row packer - so it asks for the fixtures a table saw is
+// meant to cut. M7's nest fixtures are triangles and hooks; the saw can cut
+// their bounding boxes and does, wastefully, which is the whole point of them.
+const FIXTURES = guillotineFixtures();
 
 /**
  * What a throwaway row packer achieved on each fixture, recorded in the M1 plan

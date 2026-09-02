@@ -1,0 +1,66 @@
+{
+  "name": "nest-l-brackets",
+  "description": "Twenty L-shaped shelf brackets, 500mm x 500mm with a 300mm x 300mm notch, cut on a CNC router. Each bracket is 160,000 sq mm of material inside a 250,000 sq mm box, so a table saw throws away 36% of every one before it starts - it fits 4 across and 2 down per sheet at a 3mm kerf, 8 per sheet, three sheets for twenty. A router can drop a turned bracket into another's notch, which is what the fixture measures. Hand-checked: 8 boxes per sheet on a saw, against a theoretical ceiling of 18 brackets per sheet by area alone.",
+  "role": "benchmark",
+  "materials": [
+    {
+      "id": "ply18",
+      "name": "18mm Baltic birch ply",
+      "thickness": 18,
+      "hasGrain": false
+    }
+  ],
+  "parts": [
+    {
+      "id": "bracket",
+      "label": "Shelf bracket",
+      "width": 500,
+      "height": 500,
+      "qty": 20,
+      "materialId": "ply18",
+      "rotationPolicy": "free90",
+      "outline": [
+        {
+          "x": 0,
+          "y": 0
+        },
+        {
+          "x": 500,
+          "y": 0
+        },
+        {
+          "x": 500,
+          "y": 200
+        },
+        {
+          "x": 200,
+          "y": 200
+        },
+        {
+          "x": 200,
+          "y": 500
+        },
+        {
+          "x": 0,
+          "y": 500
+        }
+      ]
+    }
+  ],
+  "stock": [
+    {
+      "id": "sheet",
+      "materialId": "ply18",
+      "width": 2440,
+      "height": 1220,
+      "qty": 4,
+      "grainAxis": "x"
+    }
+  ],
+  "config": {
+    "kerf": 3,
+    "edgeTrim": 5,
+    "seed": 1,
+    "mode": "nest"
+  }
+}

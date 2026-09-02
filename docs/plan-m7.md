@@ -593,7 +593,7 @@ Exact scope may shift as each PR's own "what shipped" notes get added here.
   three summary numbers `baseline.json` records. No browser pass - nothing user-visible
   changes until PR 8.
 
-### PR 6 - `feat/nest-engine` - the nester
+### PR 6 - `feat/nest-engine` - the nester - **shipped**
 
 - `src/solver/nest/` per §3.5.
 - New bench fixtures with irregular parts whose ideal pack is genuinely hand-checkable -
@@ -601,6 +601,95 @@ Exact scope may shift as each PR's own "what shipped" notes get added here.
   `test/files/`. A widened `Fixture` type in `test/fixtures/index.ts` and mode-aware bench
   assertions.
 - **Reports the nest-vs-guillotine waste delta** (§1 criterion 6) and nest solve times.
+
+**What shipped, and what changed on the way.**
+
+- **§3.5's kerf rule is not sound on a grid, and this is the correction.** It says to dilate
+  the candidate mask "by the full kerf" and that this "yields separation >= kerf". It does
+  not. Conservative rasterisation puts a point up to half a cell-diagonal from its cell's
+  centre, so a centre-distance dilation of `kerf` leaves true separation only
+  `> kerf - cell·√2` - and `checkResult` measures the exact Euclidean gap, so the bench
+  rejects the layout. The sound rule is derived from how close two points in cells `Δ` apart
+  can possibly be, `L(Δ) = c·√(max(0,|Δi|-1)² + max(0,|Δj|-1)²)`, with the `-1` because
+  adjacent cells touch. The structuring element is every offset with `L(Δ) < kerf`, which is
+  both sufficient and as small as soundness allows. Confirmed with the project owner as a
+  safe margin decided on the grid, with the grid's answer final and no polygon arithmetic in
+  the placement scan. The counterexample - a `(3,3)` offset on a 1mm grid, outside a 3-cell
+  radius yet only 2.83mm apart - is pinned by a test.
+- **The cell size is derived from the kerf, and that is where most of the engine's quality
+  came from.** §3.2 proposes a fixed 1mm default. Fixed is the wrong shape: the element can
+  only separate parts by whole cells, so the gap it leaves is *the kerf rounded up to a
+  multiple of the cell*. On a 2mm grid a 3mm kerf becomes a 4mm gap, which sounds negligible
+  and is not - `bookshelf` fits four 300mm rows on a 1210mm sheet at 3mm and three at 4mm, so
+  that millimetre cost a whole sheet and put nest at 28.6% waste against guillotine's 4.9%.
+  Choosing a cell that divides the kerf removes the rounding entirely and is free: 3mm grids
+  at 3mm, 1/8" at 3.175mm, 6mm at 3mm. After the change nest matches guillotine exactly on
+  `bookshelf`, `closet-organizer`, `drawer-boxes`, `grain-locked-panels` and `mixed-stock`.
+- **The nester needed a third objective criterion, and PR 5 was right that it could not be
+  `maxFreeRectArea` as guillotine means it.** `totalWastePct` is fully determined once the
+  sheet count is, so two packings that both fit on six sheets score a dead heat on criteria 1
+  and 2 - and with criterion 3 absent, `isBetterScore` was false for every candidate the
+  search ever drew. Measurably: `fast` and `balanced` returned byte-identical layouts on every
+  fixture. A raster nester has no free rectangles, but it does have the full-width band of
+  clear material below everything placed, which is the offcut a woodworker actually keeps.
+  Maximising that expresses the same intent guillotine's criterion does - consolidate the
+  leftover into one usable piece - and gives the climb its gradient.
+- **Two exact optimisations, not heuristics, and the engine is unusable without them.** A part
+  that fits nowhere on a sheet can never fit later on it, because occupancy only grows, so the
+  failure is memoised per sheet - `cabinet-carcass` was re-scanning the whole grid once per
+  instance for 43 instances. And the bottom-left-most free position for a given orientation
+  only moves forward for the same reason, so each orientation resumes where it last succeeded.
+  Both follow from the feasible set only shrinking; `place.test.ts` pins the cursor against a
+  from-scratch scan placement by placement, because if that reasoning were wrong the packing
+  would quietly get worse rather than fail. Together they took `cabinet-carcass` from 12.9s to
+  3.3s.
+- **The bench compares sheets, never waste, and says so in its own output.** §1 criterion 6
+  asks for "the nest-vs-guillotine waste delta", but §7 decision 4 has already established
+  that the two modes measure consumed area differently on purpose - so that delta is a
+  difference between answers to two different questions. `nest-imported-brackets` reports
+  60.62% nested against 48.85% sawn while using *half* the sheets, which read as a subtraction
+  says the opposite of the truth. Sheets used is the same question either way and is what the
+  user is buying, so it is the headline and the assertion; both waste figures are printed
+  beside it, labelled with what they are measured against.
+- **`allowedAngles` is exported from `validate.ts` rather than reimplemented.** A grain-locked
+  part is legal at `{0, 180}` whatever `rotationSteps` says, and an engine holding a second
+  opinion about that would produce layouts its own checker rejects - or, worse, ones the
+  checker accepts and a woodworker would not.
+- **`fast` is exactly the four deterministic baselines.** `NEST_RESTART_BUDGETS` is 4/12/60
+  against guillotine's 40/250/1500. A nest candidate rasterises every orientation of every
+  part and scans a bitmap of a whole sheet; two orders of magnitude separate the two engines'
+  candidate costs, and `balanced` is set where the largest nest fixture lands near three
+  seconds.
+- **`tight-fit` cannot be nested, and that is honest rather than a bug.** It tiles a sheet
+  exactly to the last kerf, so any quantisation loses - the raster rounds each 608.0125mm
+  panel up to 192 cells and two of them no longer fit across. Nest mode leaves 5 of 8
+  unplaced there. It is a guillotine fixture, never solved in nest mode by the bench, and it
+  is a fair statement of what a grid costs on a problem with zero slack.
+- **Nest does not beat guillotine on the M1 rectangle fixtures, and is not meant to.**
+  `cabinet-carcass` needs 90% packing density on pure rectangles and nest uses six sheets to
+  guillotine's five; `workbench-cabinet` four to three. Bottom-left fill on a grid is a weaker
+  heuristic than free-rectangle best-fit with 250 restarts, and rasterisation costs up to a
+  cell per part per axis. Nesting is for irregular parts, mode is an explicit per-project
+  choice (§7 decision 5), and the fixtures that measure the milestone are the three new ones.
+- **Existing fixture sweeps were split by engine rather than widened.** `guillotineFixtures()`
+  joins `benchmarkFixtures()` in the loader, because a cut plan, M1's 15% waste bar and
+  "beats a naive row packer" are claims about a table saw that are not even meaningful about a
+  nested layout. The sweeps that genuinely cover both - `solve()` dispatching on each
+  fixture's own mode, and DXF round-tripping whatever came back - deliberately still take the
+  whole set, and carry a benchmark's time budget instead.
+- Measured, all three new fixtures, at the default `balanced`:
+
+  | Fixture | Nest sheets | Saw sheets | Nest waste (of outline) | Saw waste (of box) | Nest time |
+  |---|---|---|---|---|---|
+  | `nest-triangles` | 1 | 2 | 35.50% | 35.50% | 3.7s |
+  | `nest-l-brackets` | 2 | 3 | 46.25% | 44.01% | 2.8s |
+  | `nest-imported-brackets` (held out) | 1 | 2 | 60.62% | 48.85% | 7.4s |
+
+- Verified: `typecheck`, `test:run` (994 passing, up from 939), `lint` and `build` clean.
+  `baseline.json` regenerated from scratch and diffed - **the eight pre-existing entries are
+  bit-identical**, with three added. Bundle impact is the nester's own code and nothing else:
+  365.52 kB to 373.35 kB raw, 112.30 kB to 114.87 kB gzipped, no new dependency. No browser
+  pass - nothing user-visible changes until PR 8.
 
 ### PR 7 - `feat/async-solve` - off the render path
 

@@ -744,14 +744,13 @@ describe('checkResult - nest mode', () => {
   });
 });
 
-describe('validateInputs - nest mode is not available yet', () => {
-  it('refuses a nest-mode config with an error', () => {
-    // Accepting it would produce a guillotine layout while `checkResult` quietly
-    // stopped asking whether that layout is cuttable. Deleted when the engine
-    // lands.
-    const issues = validateInputs([part('a', 400, 300)], [sheet()], NEST_CONFIG);
-    expect(issueOf(issues, 'unsupported-solver-mode').mode).toBe('nest');
-    expect(hasErrors(issues)).toBe(true);
+describe('validateInputs - solver mode', () => {
+  it('accepts a nest-mode config now that the engine exists', () => {
+    // Until M7 PR 6, `unsupported-solver-mode` refused this outright: accepting
+    // it would have produced a guillotine layout while `checkResult` quietly
+    // stopped asking whether that layout was cuttable. The issue is gone with
+    // the engine that made it necessary.
+    expect(validateInputs([part('a', 400, 300)], [sheet()], NEST_CONFIG)).toEqual([]);
   });
 
   it('says nothing for the default and the explicit guillotine mode', () => {
