@@ -1,8 +1,7 @@
 import { useCallback, useMemo, useReducer } from 'react';
 import { buildCutPlans, type CutPlan } from '../../domain/cutplan';
 import { fitPolygonToBox } from '../../domain/polygon';
-import type { Material, Part, Result, Stock } from '../../domain/types';
-import { solve } from '../../solver/index';
+import type { Material, Part, Stock } from '../../domain/types';
 import { BOOKSHELF_PRESET } from './presets';
 import type {
   AppState,
@@ -11,6 +10,7 @@ import type {
   DisplayUnit,
   ProjectFields,
 } from './types';
+import { useSolve } from './useSolve';
 
 const INITIAL_STATE: AppState = {
   displayUnit: 'imperial-fraction',
@@ -23,6 +23,7 @@ const INITIAL_STATE: AppState = {
   hoveredPartId: null,
   selectedMaterialId: 'all',
   showCutSequence: true,
+  projectGeneration: 0,
 };
 
 let nextId = 1;
@@ -154,6 +155,7 @@ export function cutListReducer(state: AppState, action: CutListAction): AppState
         activeSheetIndex: 0,
         hoveredPartId: null,
         selectedMaterialId: 'all',
+        projectGeneration: state.projectGeneration + 1,
       };
 
     default:
@@ -164,22 +166,21 @@ export function cutListReducer(state: AppState, action: CutListAction): AppState
 export function useCutListState(): CutListStateReturn {
   const [state, dispatch] = useReducer(cutListReducer, INITIAL_STATE);
 
-  // Compute solver result live via useMemo
-  const { result, solverError } = useMemo<{
-    result: Result | null;
-    solverError: string | null;
-  }>(() => {
-    if (state.parts.length === 0 || state.stock.length === 0) {
-      return { result: null, solverError: null };
-    }
-    try {
-      const res = solve(state.parts, state.stock, state.config);
-      return { result: res, solverError: null };
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return { result: null, solverError: msg };
-    }
-  }, [state.parts, state.stock, state.config]);
+  /**
+   * The solver result, computed off the render path.
+   *
+   * This was a `useMemo` calling `solve()` synchronously, which was invisible
+   * at guillotine's ~20ms and became seconds of frozen tab once the nester
+   * landed (`docs/plan-m7.md` §1 criterion 8). `useSolve` runs the same solve in
+   * a worker, keeps the previous layout on screen while a new one is computed,
+   * and reports `isSolving` so the diagram can say the layout is stale.
+   */
+  const { result, solverError, isSolving } = useSolve(
+    state.parts,
+    state.stock,
+    state.config,
+    state.projectGeneration,
+  );
 
   /**
    * Cut plans for the current result, built eagerly.
@@ -312,6 +313,7 @@ export function useCutListState(): CutListStateReturn {
     ...state,
     result,
     solverError,
+    isSolving,
     cutPlans,
     cutPlanError,
     dispatch,

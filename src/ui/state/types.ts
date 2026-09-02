@@ -24,6 +24,19 @@ export interface AppState {
    * were looking at when they asked for it.
    */
   showCutSequence: boolean;
+  /**
+   * Incremented every time a whole project is loaded, never on an edit.
+   *
+   * Solving is asynchronous, and `useSolve` deliberately keeps the previous
+   * layout on screen while the next one computes - which is right for an edit
+   * and wrong for a switch, where "the previous layout" belongs to a different
+   * project. Two projects made from the same template even share part and stock
+   * ids, so the stale diagram would render against the new project's data
+   * instead of being filtered out, and look entirely plausible.
+   *
+   * Transient like `activeSheetIndex`: in `AppState`, not in `ProjectFields`.
+   */
+  projectGeneration: number;
 }
 
 /** The persisted subset of `AppState` a saved project carries - see `src/storage/types.ts`. */
@@ -62,6 +75,13 @@ export type CutListAction =
 export interface CutListStateReturn extends AppState {
   result: Result | null;
   solverError: string | null;
+  /**
+   * True while a solve is running, including the debounce window before it
+   * starts. `result` is the *previous* layout during that window, so anything
+   * rendering it must say so - a nest solve takes seconds, and a stale diagram
+   * that looks current is a diagram a woodworker cuts from.
+   */
+  isSolving: boolean;
   /**
    * One plan per layout in `result`, in the same order. Empty when there is no
    * result, or when the plans could not be built.

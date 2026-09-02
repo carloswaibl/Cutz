@@ -18,8 +18,20 @@ export class SolverInputError extends Error {
 
   constructor(issues: readonly InputIssue[]) {
     const errors = issues.filter((issue) => issue.severity === 'error');
+    // The issue messages and nothing else.
+    //
+    // This used to be prefixed with "the solver was given invalid input:",
+    // which was fine while the string only ever reached a console or a test -
+    // `name` already says `SolverInputError`, so the prefix was saying it twice.
+    // M7 PR 7 is the first release that shows it to a user, under a panel
+    // heading that says the same thing a third time, and a red panel whose text
+    // began lowercase mid-sentence read as a bug in itself. Each issue message
+    // is already a whole sentence written for the person who typed the value.
     super(
-      `the solver was given invalid input: ${errors.map((issue) => issue.message).join(' ')}`.trim(),
+      errors
+        .map((issue) => issue.message)
+        .join(' ')
+        .trim() || 'the input could not be solved',
     );
     this.name = 'SolverInputError';
     this.issues = [...issues];

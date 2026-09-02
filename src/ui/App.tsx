@@ -11,6 +11,7 @@ import { MaterialManager } from './components/MaterialManager';
 import { NewProjectPrompt } from './components/NewProjectPrompt';
 import { PartTable } from './components/PartTable';
 import { PrintDocument } from './components/print/PrintDocument';
+import { SolverErrorPanel, SolvingPlaceholder } from './components/SolverStatus';
 import { StockTable } from './components/StockTable';
 import { SummaryCard } from './components/SummaryCard';
 import { UnplacedAlert } from './components/UnplacedAlert';
@@ -191,7 +192,18 @@ export function App() {
             onDeleteStock={state.deleteStock}
           />
 
-          {/* Solver Status & Cut Diagrams */}
+          {/* Solver Status & Cut Diagrams.
+
+              The solver refusing the input used to render as nothing at all -
+              `result` went null and this whole block vanished, taking the
+              explanation with it. Every error `solve()` throws is something the
+              user typed and can fix, so it is worth a panel. */}
+          {state.solverError && <SolverErrorPanel message={state.solverError} />}
+
+          {/* First solve of a project: there is no previous layout to keep on
+              screen, so this stands in for one rather than leaving a gap. */}
+          {!state.result && !state.solverError && state.isSolving && <SolvingPlaceholder />}
+
           {state.result && (
             <>
               <SummaryCard
@@ -226,6 +238,7 @@ export function App() {
                 showCutSequence={state.showCutSequence}
                 onShowCutSequenceChange={state.setShowCutSequence}
                 cutPlanError={state.cutPlanError}
+                isSolving={state.isSolving}
               />
             </>
           )}
