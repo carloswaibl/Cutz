@@ -133,6 +133,9 @@ src/domain/
                  # simplify, rotate, separation - and partOutline/placementPolygon/
                  # placedArea, the accessors that erase Part.outline's optionality
 src/solver/
+  types.ts       # Solver, plus PackedSheet/PackedResult - the engine contract
+  subproblems.ts # solveByMaterial: validate, group by material, assemble the
+                 # Result. Engine-agnostic; added in PR 5, see §5
   search.ts      # restart + hill-climb harness, engine-agnostic, seeded
   nest/
     raster.ts    # Mask, scanline polygon rasterisation, conservative rounding
@@ -512,13 +515,83 @@ Exact scope may shift as each PR's own "what shipped" notes get added here.
   a 31-point outline whose bounds are exactly the part's reported size, round-tripped through
   IndexedDB, and retyping its width refits the outline onto the new box with no error raised.
 
-### PR 5 - `feat/solver-registry` - the seam
+### PR 5 - `feat/solver-registry` - the seam - **shipped**
 
 - `src/solver/search.ts` per §3.5; `improve.ts` becomes a thin caller.
 - `objective.ts` decoupled from guillotine's `PackResult`.
 - `src/solver/index.ts` becomes a mode registry; `solve()`'s signature is unchanged.
 - `npm run bench` must show the eight existing baselines bit-identical. This is the PR where
   a guillotine regression would hide, so it lands alone.
+
+**What shipped, and what changed on the way.**
+
+- **`src/solver/subproblems.ts` is the fourth extraction, and it was not in this list.** §3.1
+  names three shared modules and §3.5 the search harness, but the per-material driver -
+  validate, group by material, expand instances, accumulate, summarise, compute
+  `totalWastePct` - was written out *twice* already, once in `packGuillotine` and once in
+  `improveGuillotine`, and §3.1 has `nest/index.ts` doing "per-material subproblems,
+  multi-sheet" as a third. Confirmed with the project owner before starting. The two existing
+  copies were character-identical, so it was a literal extraction rather than a rewrite, and
+  it is what makes PR 6's `NestSolver` an engine rather than an engine plus a driver.
+  `groupByMaterial` and `summariseUnplaced` moved here from `guillotine/index.ts` with it -
+  neither was ever guillotine-specific, and that file's own header forbids anything outside
+  its directory importing from inside it, so a shared driver reaching in would have broken the
+  rule as written.
+- **`solveByMaterial` takes a packer *factory*, not a packer, and that ordering is load-bearing.**
+  Hoisting validation into the driver put it *after* `createRng(config.seed)` in
+  `improveGuillotine`, which meant a `seed: NaN` project started throwing a bare
+  `Error('rng seed must be a finite number')` instead of the `SolverInputError` carrying
+  `invalid-seed` that `test/solver/guillotine/solver.test.ts` pins. Calling the factory only
+  once validation has passed is what puts per-solve state - a seeded generator today, a mask
+  cache in PR 6 - behind the check that says the config is usable at all. Pinned by a test
+  asserting the factory is never invoked when the input is rejected.
+- **The guillotine candidate carries its ordering explicitly, because `options.order` silently
+  eats a perturbation.** Hill climbing swaps two parts and re-packs; if `options.order` is
+  anything but `'declaration'`, `greedyPack` sorts the swap straight back out. Pre-M7 that was
+  implicit in two variables tracked side by side (`bestOrdering` and `bestOptions`); as a
+  `{ ordering, options }` candidate it is visible, and the baselines pre-order themselves so
+  the climb has something real to perturb. `orderParts` is a stable sort on a pure key, so
+  ordering a list twice by the same rule is ordering it once - which is why the packer still
+  sees the exact sequence it always did.
+- **`SolutionScore.maxFreeRectArea` is genuinely absent, not zero.** §3.5 asks for "an optional
+  third criterion rather than the hardcoded `0`", and the semantics that makes optional worth
+  having is that `compareScores` *skips* criterion 3 when either side lacks it. Scored as zero,
+  every nested candidate - which has no free rectangles at all - would lose that tiebreak to
+  any guillotine one, a comparison that means nothing since the two engines are never asked to
+  rank each other's work. Under `exactOptionalPropertyTypes` the field has to be omitted rather
+  than set to `undefined`, so `scorePack` builds the object two ways.
+- **`scorePack` and `scoreResult` measure unplaced area with `placedArea(part, mode)`.** They
+  each had their own inline `width * height`, which is right for a saw and wrong for a router;
+  §7 decision 4's "one function serves solver, validator and UI" applies to the objective too.
+  `placedArea(p, 'guillotine')` *is* `width * height`, so nothing moved today.
+- **The registry maps modes to plain functions, not to `Solver` objects.** `Solver.solve` takes
+  mutable `Part[]`/`Stock[]` while `solve()` takes `readonly` ones, so a `Record<SolverMode,
+  Solver>` would have meant copying both arrays on every call to satisfy a signature nothing
+  needs. The record is still total over `SolverMode`, so adding a mode to the domain type
+  without an engine behind it fails to typecheck rather than at runtime.
+- **`nestNotYetAvailable` throws `validateInputs`' own issues rather than a duplicated string.**
+  It never falls back to guillotine: handing a router a table-saw packing while `checkResult`
+  has stopped asking whether that packing is cuttable is exactly the silent downgrade PR 3's
+  guard exists to prevent. **PR 6 replaces this entry and deletes `unsupported-solver-mode` in
+  the same change.**
+- **`search.ts` drops one unreachable branch deliberately.** Pre-M7, a zero restart budget left
+  `bestScore` null and then still spent 20 hill-climb iterations drawing candidates it had
+  already decided to discard. `RESTART_BUDGETS`' smallest entry is 40, so it could never
+  happen; the harness returns `fallback()` immediately instead, and `test/solver/search.test.ts`
+  pins that no randomness is consumed. Budgets stay in `improve.ts` rather than moving to
+  `search.ts` - they are a table saw's numbers, and a raster nest candidate is orders of
+  magnitude more expensive.
+- **The harness is tested against an engine that packs nothing.** `test/solver/search.test.ts`
+  drives `search()` with a candidate space of plain integers - no sheets, no kerf, no free
+  rectangles. Without a second engine exercising it, "generalised" is indistinguishable from
+  "renamed", and the guillotine side is already covered by the bench.
+- Verified: `typecheck`, `test:run` (939 passing, up from 915), `lint` and `build` clean. The
+  bench baseline was regenerated from scratch and diffed - **bit-identical across all eight
+  fixtures**. Stronger still, every fixture was solved on `main` and on this branch at all
+  three effort levels and the full `Result` objects deep-compared: **125,004 bytes of JSON,
+  byte-for-byte identical** - every placement's sheet, `x`, `y` and `angleDeg`, not just the
+  three summary numbers `baseline.json` records. No browser pass - nothing user-visible
+  changes until PR 8.
 
 ### PR 6 - `feat/nest-engine` - the nester
 

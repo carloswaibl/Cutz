@@ -66,8 +66,73 @@ describe('objective function', () => {
       totalWastePct: 0.1,
     };
 
-    const score = scoreResult(result, parts, stock);
+    const score = scoreResult(result, parts, stock, 'guillotine');
     expect(score.unplacedArea).toBe(100 * 200 * 1); // 20000
     expect(score.usedStockArea).toBe(1000 * 1000 * 2); // 2000000
+    // A domain Result carries no free-rectangle information, so criterion 3 is
+    // absent rather than claiming a largest offcut of zero.
+    expect(score.maxFreeRectArea).toBeUndefined();
+  });
+
+  it('skips the free-rectangle tiebreak when either side does not have one', () => {
+    // A nested layout has no free rectangles at all. Scoring that as zero would
+    // make it lose this tiebreak to any free-rectangle candidate, which is a
+    // comparison that means nothing - the two engines never rank each other's
+    // work. Criterion 3 simply does not apply.
+    const withRects: SolutionScore = {
+      unplacedArea: 0,
+      usedStockArea: 5000,
+      maxFreeRectArea: 2000,
+    };
+    const without: SolutionScore = { unplacedArea: 0, usedStockArea: 5000 };
+
+    expect(compareScores(withRects, without)).toBe(0);
+    expect(compareScores(without, withRects)).toBe(0);
+    expect(isBetterScore(withRects, without)).toBe(false);
+    expect(isBetterScore(without, withRects)).toBe(false);
+  });
+
+  it('still ranks the earlier criteria when neither side has free rectangles', () => {
+    const better: SolutionScore = { unplacedArea: 0, usedStockArea: 3000 };
+    const worse: SolutionScore = { unplacedArea: 0, usedStockArea: 6000 };
+
+    expect(isBetterScore(better, worse)).toBe(true);
+    expect(isBetterScore(worse, better)).toBe(false);
+  });
+
+  it('measures unplaced area by mode, so a router only loses the outline', () => {
+    // An L-shaped part 100x100 with a 50x50 bite taken out: 7500mm² of material,
+    // inside a 10000mm² bounding box. A saw cuts the box and loses all of it; a
+    // router follows the outline and the corner survives. `placedArea` is the
+    // one function that decides which, for the solver, the validator and the UI
+    // alike - docs/plan-m7.md §7 decision 4.
+    const lShaped: Part = {
+      id: 'p1',
+      label: 'Gusset',
+      width: 100,
+      height: 100,
+      qty: 1,
+      materialId: 'm1',
+      rotationPolicy: 'free90',
+      outline: [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+        { x: 100, y: 50 },
+        { x: 50, y: 50 },
+        { x: 50, y: 100 },
+        { x: 0, y: 100 },
+      ],
+    };
+    const stock: Stock[] = [
+      { id: 's1', materialId: 'm1', width: 1000, height: 1000, qty: 1, grainAxis: 'x' },
+    ];
+    const result: Result = {
+      layouts: [],
+      unplacedParts: [{ partId: 'p1', qty: 1 }],
+      totalWastePct: 0,
+    };
+
+    expect(scoreResult(result, [lShaped], stock, 'guillotine').unplacedArea).toBe(10000);
+    expect(scoreResult(result, [lShaped], stock, 'nest').unplacedArea).toBe(7500);
   });
 });
