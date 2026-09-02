@@ -17,8 +17,9 @@
  */
 
 import { area, isEmpty, usableArea } from '../../domain/geometry';
-import type { Layout, Placement, SolverConfig } from '../../domain/types';
+import type { Placement, SolverConfig } from '../../domain/types';
 import type { PartInstance, StockInstance } from '../instances';
+import type { PackedResult, PackedSheet } from '../types';
 import {
   bestFit,
   type FitHeuristic,
@@ -33,22 +34,6 @@ export interface PackOptions {
   order: PartOrder;
   fit: FitHeuristic;
   split: SplitRule;
-}
-
-export interface SheetLayout {
-  layout: Layout;
-  /** Sum of the placed footprints on this sheet, mm². */
-  placedArea: number;
-  /** Full `width * height` of the sheet, mm². Not the usable area - see below. */
-  sheetArea: number;
-  /** Area of the single largest free rectangle remaining on this sheet, mm². */
-  maxFreeRectArea: number;
-}
-
-export interface PackResult {
-  sheets: SheetLayout[];
-  /** Instances no sheet could hold, in the order they were offered. */
-  unplaced: PartInstance[];
 }
 
 /**
@@ -83,8 +68,8 @@ export function greedyPack(
   stockInstances: readonly StockInstance[],
   config: SolverConfig,
   options: PackOptions,
-): PackResult {
-  const sheets: SheetLayout[] = [];
+): PackedResult {
+  const sheets: PackedSheet[] = [];
   let remaining = orderParts(partInstances, options.order);
 
   const bySize = [...stockInstances].sort(

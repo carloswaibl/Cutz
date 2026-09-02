@@ -41,6 +41,42 @@ describe('main solver module (src/solver/index.ts)', () => {
     }
   });
 
+  it('defaults to the guillotine engine when no mode is set', () => {
+    const fixture = loadFixtures()[0];
+    if (!fixture) throw new Error('No fixture');
+
+    const implicit = solve(fixture.parts, fixture.stock, fixture.config);
+    const explicit = solve(fixture.parts, fixture.stock, {
+      ...fixture.config,
+      mode: 'guillotine',
+    });
+
+    // A project saved before M7 has no `mode` at all and has to reopen to the
+    // layout its owner printed.
+    expect(implicit).toEqual(explicit);
+  });
+
+  it('refuses nest mode rather than quietly returning a table-saw layout', () => {
+    const fixture = loadFixtures()[0];
+    if (!fixture) throw new Error('No fixture');
+
+    // The engine arrives in M7 PR 6. Until it does, packing rectangles for a
+    // router while `checkResult` has stopped asking whether the layout is
+    // guillotine-decomposable would be a silent downgrade - the user would
+    // learn about it at the machine.
+    let thrown: unknown;
+    try {
+      solve(fixture.parts, fixture.stock, { ...fixture.config, mode: 'nest' });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(SolverInputError);
+    expect((thrown as SolverInputError).issues.map((issue) => issue.kind)).toContain(
+      'unsupported-solver-mode',
+    );
+  });
+
   it('re-exports SolverInputError', () => {
     const badPart = {
       id: 'p1',

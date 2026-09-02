@@ -10,22 +10,35 @@
  *    than one full sheet).
  * 3. **Maximize single largest free rectangle area across used sheets.** Pure
  *    tiebreaker that consolidates remaining leftover into one usable offcut.
+ *    Only applies to an engine that has free rectangles at all.
+ *
+ * Engine-agnostic: it scores a `PackedResult` from `solver/types.ts` and knows
+ * nothing about how the sheets were filled, which is what lets the guillotine
+ * packer and the nester share one objective.
  *
  * Pure and headless. Millimetres throughout.
  */
 
 import { EPSILON } from '../domain/geometry';
 import { parseStockInstanceId } from '../domain/instances';
-import type { Part, Result, Stock } from '../domain/types';
-import type { PackResult } from './guillotine/pack';
+import { placedArea } from '../domain/polygon';
+import type { Part, Result, SolverMode, Stock } from '../domain/types';
+import type { PackedResult } from './types';
 
 export interface SolutionScore {
   /** Total area of unplaced part instances in mm². Lower is better. */
   unplacedArea: number;
   /** Total full area (width * height) of all used stock sheets in mm². Lower is better. */
   usedStockArea: number;
-  /** Area of the single largest free rectangle across all used sheets in mm². Higher is better. */
-  maxFreeRectArea: number;
+  /**
+   * Area of the single largest free rectangle across all used sheets in mm².
+   * Higher is better.
+   *
+   * Optional: only a free-rectangle engine has one. Absent means this criterion
+   * does not apply to the score, which is not the same as it scoring zero - see
+   * `compareScores`.
+   */
+  maxFreeRectArea?: number;
 }
 
 /**
@@ -45,9 +58,16 @@ export function compareScores(a: SolutionScore, b: SolutionScore): number {
   const stockDiff = a.usedStockArea - b.usedStockArea;
   if (Math.abs(stockDiff) > EPSILON) return stockDiff;
 
-  // 3. Maximize single largest free rectangle area (higher is better -> b - a)
-  const freeRectDiff = b.maxFreeRectArea - a.maxFreeRectArea;
-  if (Math.abs(freeRectDiff) > EPSILON) return freeRectDiff;
+  // 3. Maximize single largest free rectangle area (higher is better -> b - a).
+  //
+  // Skipped entirely when either side omits it. Treating an absent value as 0
+  // would make a nested candidate - which has no free rectangles at all - lose
+  // this tiebreak to any free-rectangle candidate, a comparison that means
+  // nothing since the two engines are never asked to rank each other's work.
+  if (a.maxFreeRectArea !== undefined && b.maxFreeRectArea !== undefined) {
+    const freeRectDiff = b.maxFreeRectArea - a.maxFreeRectArea;
+    if (Math.abs(freeRectDiff) > EPSILON) return freeRectDiff;
+  }
 
   return 0;
 }
@@ -60,34 +80,53 @@ export function isBetterScore(candidate: SolutionScore, best: SolutionScore): bo
 }
 
 /**
- * Score a per-material subproblem `PackResult`.
+ * Score one per-material subproblem, whichever engine packed it.
+ *
+ * `mode` decides how much sheet an unplaced part would have consumed, via the
+ * single `placedArea` accessor the validator and the UI also use - a saw loses
+ * the whole bounding box, a router only the outline (`docs/plan-m7.md` §7
+ * decision 4). For a guillotine pack this is exactly `width * height`.
  */
-export function scorePackResult(packResult: PackResult): SolutionScore {
+export function scorePack(packed: PackedResult, mode: SolverMode): SolutionScore {
   let unplacedArea = 0;
-  for (const instance of packResult.unplaced) {
-    unplacedArea += instance.part.width * instance.part.height;
+  for (const instance of packed.unplaced) {
+    unplacedArea += placedArea(instance.part, mode);
   }
 
   let usedStockArea = 0;
-  let maxFreeRectArea = 0;
+  // Left undefined unless some sheet actually reported one, so an engine with
+  // no free-rectangle notion produces a score that skips criterion 3 rather
+  // than one that claims a largest offcut of zero.
+  let maxFreeRectArea: number | undefined;
 
-  for (const sheet of packResult.sheets) {
+  for (const sheet of packed.sheets) {
     usedStockArea += sheet.sheetArea;
-    if (sheet.maxFreeRectArea > maxFreeRectArea) {
-      maxFreeRectArea = sheet.maxFreeRectArea;
+    if (sheet.maxFreeRectArea !== undefined) {
+      if (maxFreeRectArea === undefined || sheet.maxFreeRectArea > maxFreeRectArea) {
+        maxFreeRectArea = sheet.maxFreeRectArea;
+      }
     }
   }
 
-  return { unplacedArea, usedStockArea, maxFreeRectArea };
+  // Built two ways rather than assigning `undefined`: under
+  // `exactOptionalPropertyTypes` an absent property and one holding `undefined`
+  // are different things, and absent is the one that means "does not apply".
+  return maxFreeRectArea === undefined
+    ? { unplacedArea, usedStockArea }
+    : { unplacedArea, usedStockArea, maxFreeRectArea };
 }
 
 /**
- * Score a overall domain `Result` given the original parts and stock definitions.
+ * Score an overall domain `Result` given the original parts and stock definitions.
+ *
+ * A `Result` carries no free-rectangle information, so criterion 3 is simply
+ * absent rather than reported as zero.
  */
 export function scoreResult(
   result: Result,
   parts: readonly Part[],
   stock: readonly Stock[],
+  mode: SolverMode,
 ): SolutionScore {
   const partsMap = new Map<string, Part>();
   for (const part of parts) {
@@ -103,7 +142,7 @@ export function scoreResult(
   for (const unplaced of result.unplacedParts) {
     const part = partsMap.get(unplaced.partId);
     if (part !== undefined) {
-      unplacedArea += unplaced.qty * part.width * part.height;
+      unplacedArea += unplaced.qty * placedArea(part, mode);
     }
   }
 
@@ -118,6 +157,5 @@ export function scoreResult(
     }
   }
 
-  // Domain Result does not track free rects, so maxFreeRectArea defaults to 0
-  return { unplacedArea, usedStockArea, maxFreeRectArea: 0 };
+  return { unplacedArea, usedStockArea };
 }
