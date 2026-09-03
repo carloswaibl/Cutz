@@ -393,6 +393,11 @@ Conventions from M7 that are easy to break:
 - **Nest and guillotine waste percentages are not comparable, by design** (`placedArea(part, mode)`,
   §7 decision 4). Compare sheets used. The UI says so on both sides; the bench prints both figures
   labelled and never subtracts them.
+- **In nest mode the drawn boundary is `placementPolygon` for *every* part, outline or not.**
+  A rectangle turned 30° is still a rectangle; `placementRect` is the axis-aligned box *around* it,
+  which for a 140x90 part is 166x148. Gating the polygon branch on `part.outline` drew that box -
+  a different size at every angle, overlapping the neighbours nested against it - while `dxf.ts`
+  emitted the real corners, so the two exports of one layout disagreed. `SheetFigure.tsx`, M7 PR 9.
 - **A nested part's label is dropped when a bigger part's label already covers that spot**
   (`suppressedLabels` in `SheetFigure.tsx`, M7 PR 9). Nesting overlaps bounding boxes on purpose,
   so two labels centred in them can print on top of each other. Guillotine layouts never suppress

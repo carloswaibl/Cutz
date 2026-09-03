@@ -923,7 +923,27 @@ Exact scope may shift as each PR's own "what shipped" notes get added here.
   Nest mode only, so guillotine sheets - and the M3 golden SVGs - are untouched. `partTextLayout` was
   extracted in the same change so the planner and the renderer cannot disagree about where the text
   is.
-- **The bench fixtures could not reproduce it, and the test says why.** `nest-l-brackets` nests parts
+- **A second defect, found by the project owner reading the screenshot this PR produced: a turned
+  part with no outline was drawn as the box around it.** `PlacedPartRect` gated its polygon branch
+  on `part.outline !== undefined`, reasoning that a hand-entered rectangle's outline is its own
+  bounding box and drawing both is two hairlines over the same pixels. That is true at 0° and 90°
+  and false at every other angle: `placementRect` is the *axis-aligned* box around the turned
+  shape, so a 140 x 90 plate at 30° drew as 166 x 148 - **95% too much area, a different size at
+  every angle, and visibly swallowing the parts nested against it.** The owner spotted exactly
+  that: red plates that overlapped and were not all the same size. The layouts were never wrong -
+  the solver packs the real polygon, and `isPlainBox` in `validate.ts` already took the box
+  shortcut only on a quarter turn - so this was the drawing lying about a correct layout.
+- **`dxf.ts` had it right all along, which is what makes this a contract break rather than a
+  cosmetic bug.** It emits `placementPolygon` in nest mode unconditionally. So the renderer and the
+  exporter described the same layout differently, which is precisely what both files' headers say
+  must never happen and what `§4` promised rotated geometry in `domain/polygon.ts` would prevent.
+  The fix is one line - in nest mode the outline is the cut *for every part* - plus a test that
+  renders both exports of one turned plate and compares the four corners.
+- **The bench fixtures could not reproduce this one either.** Every nest fixture's parts carry
+  outlines, so the broken branch was never taken. What it needed was the most ordinary input there
+  is: a rectangle typed into the parts table, on a router, at an angle. Both new tests hand-build
+  that.
+- **The label-collision test's fixture could not reproduce it, and the test says why.** `nest-l-brackets` nests parts
   that are large next to their own labels. The hazard needs the opposite - parts smaller than the
   text naming them, which is the ordinary case for imported hardware - so the test hand-places two
   interlocked brackets rather than solving for them, and asserts both that nest mode drops a label
@@ -956,10 +976,12 @@ Exact scope may shift as each PR's own "what shipped" notes get added here.
   constraint and conclude the repo violates itself. The parts that still bind are stated as what
   survives: neither engine may assume it is the only one, and everything other than the solve worker
   still needs numbers first.
-- Verified: `typecheck`, `lint` and `build` clean, `test:run` **1030 passing** (up from 1029), and
+- Verified: `typecheck`, `lint` and `build` clean, `test:run` **1032 passing** (up from 1029), and
   `npm run bench` leaving `baseline.json` **untouched** - all eleven entries unmoved, true by
-  construction since no file under `src/solver/` or `src/domain/` changed. Bundle: 382.85 → 383.78 kB
-  raw, 117.90 → 118.37 kB gzipped for the label planner. No new dependency.
+  construction since no file under `src/solver/` or `src/domain/` changed. Bundle: 382.85 → 383.75 kB
+  raw, 117.90 → 118.36 kB gzipped. No new dependency. Both fixes re-checked in the browser on the
+  36-part nested sheet that exposed the second one: all 36 parts now render as polygons, none as a
+  bounding box, and the plates that were different sizes at different angles are congruent.
 
 ---
 

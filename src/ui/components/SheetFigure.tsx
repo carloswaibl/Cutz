@@ -403,23 +403,27 @@ function PlacedPartRect({
   const interactive = onHoverPart !== undefined;
 
   /**
-   * The real shape, drawn only when it is not already the rectangle.
-   *
-   * `placementPolygon` answers for every part, outline or not - it is
-   * `partOutline` turned and translated - so the check is on `part.outline`
-   * rather than on the returned points: a hand-entered rectangle would come back
-   * as four corners exactly coincident with `rect`, and drawing that twice is
-   * two hairlines fighting over the same pixels.
+   * Where this part actually sits, outline or not: `partOutline` turned by
+   * `angleDeg` and moved to `x`/`y`.
    */
-  const outlinePoints =
-    part.outline !== undefined ? pointsAttr(placementPolygon(part, placement)) : null;
+  const placedPoints = pointsAttr(placementPolygon(part, placement));
 
   /**
    * In nest mode the outline is the cut, so it replaces the box entirely. In
    * guillotine mode the box is the cut and the outline is a hint drawn inside it.
+   *
+   * **In nest mode this holds for every part, including one with no outline at
+   * all.** A hand-entered rectangle turned 30° is still a rectangle; what
+   * `rect` describes is the axis-aligned box *around* it, which for a
+   * 140 x 90 part at 30° is 166 x 148 - 95% too much area, a different size at
+   * every angle, and visibly swallowing the neighbours nested against it.
+   * `dxf.ts` has always emitted `placementPolygon` here regardless of
+   * `part.outline`, so gating this branch on the outline had the renderer and
+   * the exporter describing the same layout differently - the one thing both
+   * files' headers say must never happen.
    */
-  const drawAsPolygon = mode === 'nest' && outlinePoints !== null;
-  const drawOutlineHint = mode === 'guillotine' && outlinePoints !== null;
+  const drawAsPolygon = mode === 'nest';
+  const drawOutlineHint = mode === 'guillotine' && part.outline !== undefined;
 
   const shapeFill = {
     fill,
@@ -449,7 +453,7 @@ function PlacedPartRect({
           `rx` has no polygon equivalent, and a rounded corner would misstate a
           shape the router follows literally, so the polygon branch drops it. */}
       {drawAsPolygon ? (
-        <polygon points={outlinePoints} {...shapeFill} />
+        <polygon points={placedPoints} {...shapeFill} />
       ) : (
         // Attribute order matches what this element emitted before M7 PR 8, so
         // a guillotine sheet exports byte-identically to the golden files.
@@ -471,7 +475,7 @@ function PlacedPartRect({
           is exactly the confusion `docs/plan-m7.md` §1 criterion 9 is about. */}
       {drawOutlineHint && (
         <polygon
-          points={outlinePoints}
+          points={placedPoints}
           fill="none"
           stroke={theme.partOutlineHint}
           strokeOpacity={theme.partOutlineHintOpacity}
@@ -485,7 +489,7 @@ function PlacedPartRect({
       {/* Hover glow */}
       {isHovered &&
         (drawAsPolygon ? (
-          <polygon points={outlinePoints} {...shapeGlow} />
+          <polygon points={placedPoints} {...shapeGlow} />
         ) : (
           <rect
             x={rect.x}
