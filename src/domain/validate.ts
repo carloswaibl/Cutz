@@ -42,7 +42,16 @@ import {
   polygonSeparation,
   rotatePolygon,
 } from './polygon';
-import type { Part, Placement, Point, Result, SolverConfig, SolverMode, Stock } from './types';
+import type {
+  Part,
+  Placement,
+  Point,
+  Result,
+  RotationSteps,
+  SolverConfig,
+  SolverMode,
+  Stock,
+} from './types';
 import { formatLength } from './units';
 
 // The search itself lives in `cutplan.ts`, which needs the tree this checker
@@ -119,8 +128,13 @@ export function solverMode(config: SolverConfig): SolverMode {
   return config.mode ?? 'guillotine';
 }
 
-/** Equally spaced orientations over 360°, with the default step count applied. */
-const DEFAULT_ROTATION_STEPS = 4;
+/**
+ * Equally spaced orientations over 360° when a config does not say.
+ *
+ * Exported so the machine selector's dropdown shows the value the engine will
+ * actually use for a project that has never set one, rather than a blank.
+ */
+export const DEFAULT_ROTATION_STEPS: RotationSteps = 4;
 
 /**
  * The angles a part may be turned to, in degrees.

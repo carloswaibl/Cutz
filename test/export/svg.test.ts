@@ -15,6 +15,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { buildCutPlan, type CutPlan } from '../../src/domain/cutplan';
+import { placementPolygon } from '../../src/domain/polygon';
 import type { Layout, Material, Part, SolverConfig, Stock } from '../../src/domain/types';
 import { renderSheetSvg } from '../../src/export/svg';
 import { solve } from '../../src/solver';
@@ -33,8 +34,26 @@ interface Sheet {
   sheetCount: number;
 }
 
+/**
+ * Solved sheets, cached by fixture name.
+ *
+ * A nest fixture takes seconds to solve, and several tests want the same one.
+ * Solving it once per file is what keeps them inside a sane budget - and the
+ * solver is deterministic, so a cached result is the same object every call
+ * would have produced.
+ */
+const sheetCache = new Map<string, Sheet>();
+
 /** Solve a fixture and hand back its first sheet with everything needed to draw it. */
 function firstSheet(fixtureName: string): Sheet {
+  const cached = sheetCache.get(fixtureName);
+  if (cached) return cached;
+  const sheet = solveFirstSheet(fixtureName);
+  sheetCache.set(fixtureName, sheet);
+  return sheet;
+}
+
+function solveFirstSheet(fixtureName: string): Sheet {
   const fixture = loadFixture(fixtureName);
   const result = solve(fixture.parts, fixture.stock, fixture.config);
   const layout = result.layouts[0];
@@ -257,5 +276,95 @@ describe('SheetFigure on screen', () => {
       }),
     );
     await expect(markup).toMatchFileSnapshot('./golden/screen-sheet-1.svg');
+  });
+});
+
+/**
+ * What the diagram draws is decided by the machine, not by the shape.
+ *
+ * The distinction is the whole of `docs/plan-m7.md` §4's rendering decision and
+ * it is not cosmetic: the boundary drawn around a part is a claim about what the
+ * machine will cut. Drawing a curve on a table-saw sheet claims a cut no blade
+ * makes, and would sit underneath a cut-sequence overlay contradicting it.
+ */
+/**
+ * A nest solve is seconds, not milliseconds, and Vitest runs files in parallel
+ * against a 5s default - the same contention `test/solver/nest/solver.test.ts`
+ * hit in M7 PR 7. Same idiom and same reasoning: an explicit budget rather than
+ * a smaller fixture, because a rectangle would not test what this claims.
+ */
+const NEST_SOLVE_TIMEOUT_MS = 60_000;
+
+describe('mode decides what a part is drawn as', { timeout: NEST_SOLVE_TIMEOUT_MS }, () => {
+  function screenMarkup(sheet: Sheet) {
+    return renderToStaticMarkup(
+      createElement(SheetFigure, {
+        layout: sheet.layout,
+        stock: sheet.stock,
+        parts: sheet.parts,
+        material: sheet.material,
+        config: sheet.config,
+        displayUnit: 'metric-mm',
+        fractionDenominator: 16,
+        theme: SCREEN_THEME,
+      }),
+    );
+  }
+
+  /** The same outlined parts and layout, re-labelled for the other machine. */
+  function asMode(sheet: Sheet, mode: 'guillotine' | 'nest'): Sheet {
+    return { ...sheet, config: { ...sheet.config, mode } };
+  }
+
+  it('draws a nested part as a polygon of its own outline', () => {
+    const sheet = firstSheet('nest-triangles');
+    const markup = screenMarkup(sheet);
+
+    const shaped = sheet.parts.filter((p) => p.outline !== undefined);
+    expect(shaped.length).toBeGreaterThan(0);
+
+    // One polygon per placement, plus the grain arrowhead the sheet always has.
+    const polygons = markup.match(/<polygon\b/g) ?? [];
+    expect(polygons.length).toBeGreaterThanOrEqual(sheet.layout.placements.length);
+
+    // A triangle is three points; a rect would be four and axis-aligned.
+    const first = sheet.layout.placements[0];
+    if (!first) throw new Error('nest-triangles solved to an empty sheet');
+    const part = sheet.parts.find((p) => p.id === first.partId);
+    if (!part) throw new Error('placement names a part the fixture does not have');
+    const expected = placementPolygon(part, first)
+      .map((p) => `${Math.round(p.x * 1000) / 1000},${Math.round(p.y * 1000) / 1000}`)
+      .join(' ');
+    expect(markup).toContain(`points="${expected}"`);
+  });
+
+  it('draws the same parts as bounding boxes on a table saw, with the shape hinted', () => {
+    const sheet = asMode(firstSheet('nest-triangles'), 'guillotine');
+    const markup = screenMarkup(sheet);
+
+    // The cut boundary is a rect again - that is what the blade produces.
+    const rects = markup.match(/<rect\b/g) ?? [];
+    expect(rects.length).toBeGreaterThanOrEqual(sheet.layout.placements.length);
+
+    // The shape is not thrown away, only demoted: it is drawn dashed, in the
+    // hint colour, and never filled - a filled polygon would read as the part.
+    expect(markup).toContain(SCREEN_THEME.partOutlineHint);
+    expect(markup).toContain('stroke-dasharray="4 3"');
+  });
+
+  it('shows a nested part its actual angle, not a bare rotation glyph', () => {
+    const sheet = firstSheet('nest-triangles');
+    const turned = sheet.layout.placements.find((p) => p.angleDeg !== 0 && p.angleDeg !== 90);
+    if (!turned) throw new Error('expected nest-triangles to turn a part off the axes');
+    expect(screenMarkup(sheet)).toContain(`↻${Math.round(turned.angleDeg)}°`);
+  });
+
+  it('draws no kerf lines on a router', () => {
+    // They are two axis-aligned dashes off a bounding box, which is a blade's
+    // clearance. A router's is an offset band round the outline, so the saw's
+    // version beside a nested part would claim a cut nobody makes.
+    const nested = firstSheet('nest-triangles');
+    expect(screenMarkup(nested)).not.toContain(SCREEN_THEME.kerfLine);
+    expect(screenMarkup(asMode(nested, 'guillotine'))).toContain(SCREEN_THEME.kerfLine);
   });
 });

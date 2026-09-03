@@ -32,9 +32,10 @@
 
 import type { CutPlan } from '../domain/cutplan';
 import { type Rect, usableArea } from '../domain/geometry';
-import { placementRect } from '../domain/polygon';
+import { placementPolygon, placementRect } from '../domain/polygon';
 import type { Layout, Material, Part, Placement, SolverConfig, Stock } from '../domain/types';
 import { formatLength } from '../domain/units';
+import { solverMode } from '../domain/validate';
 import { toFormatUnit } from '../ui/format';
 import type { DisplayUnit } from '../ui/state/types';
 
@@ -385,7 +386,16 @@ function partLabels(
   // The diagram marks rotation with '↻'. R12 is an ANSI-era format with no
   // reliable encoding declaration, so anything outside ASCII is a good way to
   // get mojibake in an old viewer - the marker spells itself out here.
-  const label = placement.angleDeg !== 0 ? `${part.label} (R)` : part.label;
+  //
+  // A nested part can sit at any angle, and '(R)' alone would say a 30° part and
+  // a 90° one were the same thing. Quarter turns keep the bare marker they have
+  // carried since M3, so no guillotine export changes.
+  const label =
+    placement.angleDeg === 0
+      ? part.label
+      : solverMode(input.config) === 'nest' && placement.angleDeg !== 90
+        ? `${part.label} (R${Math.round(placement.angleDeg)})`
+        : `${part.label} (R)`;
 
   // Laid out as the SVG does: label above centre, dimensions below it. Sheet Y
   // grows downwards, so the smaller Y is the upper line before the flip.
@@ -441,12 +451,27 @@ export function renderSheetDxf(input: SheetDxfInput): string {
     rectPolyline(dxf, DXF_LAYERS.trim, usableArea(stock, config.edgeTrim), to);
   }
 
+  // What the machine follows: the outline on a router, the bounding box on a
+  // saw. `closedPolyline` was already generic over N vertices and R12
+  // POLYLINE/VERTEX/SEQEND handles them natively, so a curve costs nothing but
+  // the vertices themselves. Labels stay anchored on the bounding box either
+  // way - that is where the SVG puts them, and the two exports of one layout
+  // have to read the same.
+  const mode = solverMode(config);
   const partsById = new Map(parts.map((part) => [part.id, part]));
   for (const placement of layout.placements) {
     const part = partsById.get(placement.partId);
     if (!part) continue;
     const rect = placementRect(part, placement);
-    rectPolyline(dxf, DXF_LAYERS.parts, rect, to);
+    if (mode === 'nest') {
+      closedPolyline(
+        dxf,
+        DXF_LAYERS.parts,
+        placementPolygon(part, placement).map((p) => to(p.x, p.y)),
+      );
+    } else {
+      rectPolyline(dxf, DXF_LAYERS.parts, rect, to);
+    }
     partLabels(dxf, part, placement, rect, input, to, units.scale);
   }
 

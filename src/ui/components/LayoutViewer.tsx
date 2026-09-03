@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { TransformComponent, TransformWrapper } from 'react-zoom-pan-pinch';
 import type { CutPlan } from '../../domain/cutplan';
 import type { Layout, Material, Part, SolverConfig, Stock } from '../../domain/types';
+import { solverMode } from '../../domain/validate';
 import {
   DXF_MIME_TYPE,
   downloadFile,
@@ -140,6 +141,7 @@ export function LayoutViewer({
   const activeLayout = filteredLayouts[safeIndex];
   if (!activeLayout) return null;
 
+  const mode = solverMode(config);
   const activePlan = planByInstanceId.get(activeLayout.layout.stockInstanceId) ?? null;
   /**
    * The overlay only goes on when there is a plan that was actually proved. A
@@ -252,26 +254,33 @@ export function LayoutViewer({
                 One switch for the diagram, the printed pages and both export
                 formats: a file that shows different cuts from the screen it was
                 exported from is worse than no file. The panel's own `<summary>`
-                is the second control on this same state. */}
-            <button
-              type="button"
-              onClick={() => onShowCutSequenceChange(!showCutSequence)}
-              disabled={activePlan === null}
-              aria-pressed={showCutSequence}
-              title={
-                activePlan === null
-                  ? 'No cut plan for this sheet'
-                  : 'Show the derived cut order on the diagram, in exports, and in print'
-              }
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-                showCutSequence && activePlan !== null
-                  ? 'bg-amber-500/15 border-amber-500/50 text-amber-300'
-                  : 'bg-slate-900/60 border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white'
-              }`}
-            >
-              <CutLinesIcon />
-              Cut sequence
-            </button>
+                is the second control on this same state.
+
+                Absent entirely on a router. A disabled toggle would invite the
+                user to wonder what is wrong with their layout; nothing is - a
+                nested layout has no guillotine cut sequence to show. The panel
+                below says that in words. */}
+            {mode === 'guillotine' && (
+              <button
+                type="button"
+                onClick={() => onShowCutSequenceChange(!showCutSequence)}
+                disabled={activePlan === null}
+                aria-pressed={showCutSequence}
+                title={
+                  activePlan === null
+                    ? 'No cut plan for this sheet'
+                    : 'Show the derived cut order on the diagram, in exports, and in print'
+                }
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                  showCutSequence && activePlan !== null
+                    ? 'bg-amber-500/15 border-amber-500/50 text-amber-300'
+                    : 'bg-slate-900/60 border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                <CutLinesIcon />
+                Cut sequence
+              </button>
+            )}
 
             {/* Export cluster: one row per format */}
             {EXPORT_FORMATS.map((format) => (
@@ -510,7 +519,8 @@ export function LayoutViewer({
           Capped to the diagram's own height above `xl` and scrolled inside
           itself, so a forty-step plan does not stretch the row past the sheet
           it belongs to. Below `xl` it is stacked and grows freely. */}
-        {activePlan !== null && (
+        {mode === 'nest' && <NoCutSequenceNote />}
+        {mode === 'guillotine' && activePlan !== null && (
           <details
             open={showCutSequence}
             onToggle={(e) => onShowCutSequenceChange(e.currentTarget.open)}
@@ -555,6 +565,33 @@ export function LayoutViewer({
         Scroll to zoom. Click and drag to pan. Exporting all sheets downloads one file each, so your
         browser will ask permission the first time.
       </div>
+    </div>
+  );
+}
+
+/**
+ * What stands where the cut sequence does on a table saw.
+ *
+ * It occupies the same grid cell rather than letting the diagram widen, so
+ * switching machines does not resize the drawing the user is looking at. Saying
+ * nothing here was the alternative and is worse: a panel that silently vanishes
+ * reads as something failing, and the one thing a woodworker must not do is
+ * carry a nested layout to a table saw. `docs/plan-m7.md` §1 criterion 9.
+ */
+function NoCutSequenceNote() {
+  return (
+    <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 flex flex-col gap-2">
+      <h3 className="text-sm font-medium text-slate-200">No cut sequence</h3>
+      <p className="text-xs text-slate-400 leading-relaxed">
+        A nested layout has no cut sequence, because there is no order of edge-to-edge cuts that
+        produces it. That is what nesting is for - the router follows each part's outline
+        individually, reaching parts a saw could never separate.
+      </p>
+      <p className="text-xs text-slate-400 leading-relaxed">
+        These sheets cannot be cut on a table saw. Switch the machine back to{' '}
+        <span className="text-slate-300 font-medium">Table saw</span> to get a layout that can, with
+        the cut order to follow.
+      </p>
     </div>
   );
 }

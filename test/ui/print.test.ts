@@ -37,7 +37,25 @@ interface Project {
 }
 
 /** Solve a fixture and assemble everything `PrintDocument` needs. */
+/**
+ * Solved projects, cached by fixture name.
+ *
+ * A nest fixture takes seconds to solve and several tests want the same one.
+ * The solver is deterministic, so the cached project is what a second solve
+ * would have produced. Callers that need to vary something derive a copy rather
+ * than mutating this.
+ */
+const projectCache = new Map<string, Project>();
+
 function project(fixtureName: string): Project {
+  const cached = projectCache.get(fixtureName);
+  if (cached) return cached;
+  const built = solveProject(fixtureName);
+  projectCache.set(fixtureName, built);
+  return built;
+}
+
+function solveProject(fixtureName: string): Project {
   const fixture = loadFixture(fixtureName);
   const result = solve(fixture.parts, fixture.stock, fixture.config);
   const plans = buildCutPlans(result, {
@@ -222,6 +240,100 @@ describe('PrintDocument', () => {
     const wide = project('bookshelf');
     expect(wide.layouts[0]?.stock.width).toBeGreaterThan(wide.layouts[0]?.stock.height ?? 0);
     expect(render(wide)).not.toContain('w-[45%]');
+  });
+});
+
+/**
+ * The printed page for a nested job.
+ *
+ * The paper is the thing that physically travels to the machine, so it is the
+ * one output where getting this wrong has a cost: a printed nested layout that
+ * looks like every other cut sheet is an invitation to take it to a table saw,
+ * where the first cut ruins the sheet. Nothing else in the app can correct that
+ * once the paper is out of the printer.
+ */
+const NEST_SOLVE_TIMEOUT_MS = 60_000;
+
+describe('a nested printout is never mistaken for a sawn one', {
+  timeout: NEST_SOLVE_TIMEOUT_MS,
+}, () => {
+  /**
+   * Mirrors what `useCutListState` does in nest mode: no cut plans at all.
+   * Building them and finding them invalid is the same end state by a slower
+   * road, and the app deliberately does not take it.
+   */
+  function nestProject(fixtureName: string): Project {
+    const p = project(fixtureName);
+    return { ...p, plans: [], planByInstanceId: new Map() };
+  }
+
+  it('says which machine the sheets are for', () => {
+    const markup = render(nestProject('nest-triangles'));
+    expect(markup).toContain('Machine settings');
+    expect(markup).toContain('CNC router');
+    expect(markup).toContain('Cutter diameter');
+    expect(markup).not.toContain('Table saw');
+  });
+
+  it('still calls a kerf a kerf on a table saw', () => {
+    const markup = render(project('bookshelf'));
+    expect(markup).toContain('Table saw');
+    expect(markup).toContain('>Kerf<');
+    expect(markup).not.toContain('Cutter diameter');
+  });
+
+  it('warns in as many words that these sheets cannot go to a table saw', () => {
+    expect(render(nestProject('nest-triangles'))).toContain('cannot be cut on a table saw');
+  });
+
+  it('prints no cut sequence, no blade lines, and no note about either', () => {
+    const markup = render(nestProject('nest-triangles'));
+    expect(markup).not.toContain('Cut sequence');
+    // The overlay's step badges. Their absence is the diagram agreeing with the
+    // rest of the page rather than carrying an order nobody derived.
+    expect(count(markup, 'Cut 1')).toBe(0);
+    // The footnote below the summary used to explain how cut sequences are
+    // ordered, on every page ever printed. On a nested job it described
+    // something that is not on the paper.
+    expect(markup).not.toContain('valid order of operations');
+    // The half that holds on any machine stays.
+    expect(markup).toContain('Check every dimension before cutting.');
+  });
+
+  it('names the angles a nested part was actually turned to', () => {
+    // The cut list said "turned 90°" for anything off square, which was safe
+    // when a saw's only other orientation *was* 90°. A part nested at 270° that
+    // the page calls 90° is a number an operator would check their setup
+    // against, and it is wrong.
+    //
+    // Every angle actually used has to appear, and the pre-M7 claim that they
+    // are all 90° has to be gone - `not.toContain('turned 90°')` is the half
+    // that would have failed before this change.
+    const p = nestProject('nest-triangles');
+    const angles = [
+      ...new Set(
+        p.result.layouts
+          .flatMap((l) => l.placements)
+          .map((pl) => pl.angleDeg)
+          .filter((a) => a !== 0),
+      ),
+    ].sort((a, b) => a - b);
+    expect(angles).toEqual([90, 180, 270]);
+
+    const markup = render(p);
+    expect(markup).toContain('turned 90°/180°/270°');
+    expect(markup).not.toContain('· turned 90°<');
+  });
+
+  it('records the rotation count, which is the layout it produced', () => {
+    // Re-solving at a different step count gives a different layout, so a sheet
+    // in the shop has to say which one it came from to be reproducible.
+    const markup = render(nestProject('nest-triangles'));
+    expect(markup).toContain('Rotations');
+  });
+
+  it('does not offer a rotation count for a saw, which has no such choice', () => {
+    expect(render(project('bookshelf'))).not.toContain('Rotations');
   });
 });
 

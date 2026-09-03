@@ -100,6 +100,55 @@ function angleText(part: ImportedPart): string {
   return `${part.angle.toFixed(1)}°`;
 }
 
+/**
+ * The shape the importer actually found, at thumbnail size.
+ *
+ * The cheapest possible end-to-end check that outline retention works: if this
+ * draws a rectangle for a bracket, the outline died somewhere upstream and the
+ * router would cut a rectangle too.
+ *
+ * No transform and no y-flip are needed. `src/import/outline.ts` guarantees the
+ * outline is in part-local millimetres with the origin at the bounding box's
+ * top-left, y growing down exactly as SVG's does, and bounds equal to the
+ * reported width/height - so the part's own box *is* the viewBox.
+ *
+ * A row with no outline is its own bounding box (`isBoxOutline` in `group.ts`
+ * drops the field in that case), so it draws as the rectangle it is rather than
+ * as a blank cell - the column then means "this is the shape", never "we have no
+ * idea".
+ */
+function ShapeThumbnail({ part }: { part: ImportedPart }) {
+  const points =
+    part.outline !== undefined
+      ? part.outline.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ')
+      : `0,0 ${part.width},0 ${part.width},${part.height} 0,${part.height}`;
+
+  return (
+    <svg
+      viewBox={`0 0 ${part.width} ${part.height}`}
+      preserveAspectRatio="xMidYMid meet"
+      width="28"
+      height="28"
+      role="img"
+      aria-label={part.outline !== undefined ? 'Shaped part' : 'Rectangular part'}
+      className="text-amber-400/70"
+    >
+      <title>{part.outline !== undefined ? 'Shaped part' : 'Rectangular part'}</title>
+      {/* `non-scaling-stroke` keeps the hairline a hairline: the viewBox spans
+          hundreds of millimetres inside a 28px box, so a plain stroke width
+          would scale down to nothing. */}
+      <polygon
+        points={points}
+        fill="currentColor"
+        fillOpacity={0.2}
+        stroke="currentColor"
+        strokeWidth={1}
+        vectorEffect="non-scaling-stroke"
+      />
+    </svg>
+  );
+}
+
 function flagText(part: ImportedPart): string | null {
   if (part.flags.length === 0) return null;
   return part.flags
@@ -207,6 +256,7 @@ function FileSection({
           <thead>
             <tr className="border-b border-slate-800 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
               <th className="px-2 py-2 w-8" />
+              <th className="px-2 py-2 w-12">Shape</th>
               <th className="px-2 py-2">Label</th>
               <th className="px-2 py-2 w-24">Width</th>
               <th className="px-2 py-2 w-24">Height</th>
@@ -231,6 +281,9 @@ function FileSection({
                       checked={row.selected}
                       onChange={(e) => onRowChange(file.id, index, { selected: e.target.checked })}
                     />
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <ShapeThumbnail part={row.part} />
                   </td>
                   <td className="px-2 py-1.5">
                     <input

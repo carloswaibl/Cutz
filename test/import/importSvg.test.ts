@@ -158,7 +158,12 @@ describe('a Fusion-shaped file', () => {
     expect(kinds(outcome)).toContain('hole-discarded');
     const hole = outcome.warnings.find((w) => w.kind === 'hole-discarded');
     expect(hole?.count).toBe(1);
-    expect(hole?.message).toContain('table saw');
+    // The reason has to hold on both machines as of M7. It used to read "a
+    // table saw cuts edge to edge", which since nest mode exists would invite
+    // the user to switch machine and expect their holes back - they do not come
+    // back, because `Part` carries an outer outline only.
+    expect(hole?.message).toContain('outer outline');
+    expect(hole?.message).not.toContain('table saw');
   });
 });
 

@@ -1,8 +1,24 @@
 import { useEffect, useState } from 'react';
-import type { SolverConfig } from '../../domain/types';
+import type { RotationSteps, SolverConfig, SolverMode } from '../../domain/types';
 import { formatLength, parseLength, type Unit } from '../../domain/units';
+import { DEFAULT_ROTATION_STEPS, solverMode } from '../../domain/validate';
 import { createRng } from '../../solver/rng';
 import type { DisplayUnit } from '../state/types';
+
+/**
+ * How many orientations the nester may try, and what each is worth saying.
+ *
+ * Written as what the woodworker gets rather than as a bare count: "12" means
+ * nothing on its own, "every 30°" is the thing they are choosing. Cost rises
+ * with the count - each orientation is a separate rasterisation of every part
+ * and a separate scan of the sheet - so the two expensive ones say so.
+ */
+const ROTATION_OPTIONS: { value: RotationSteps; label: string }[] = [
+  { value: 2, label: '2 - half turns only' },
+  { value: 4, label: '4 - quarter turns' },
+  { value: 12, label: '12 - every 30° (slower)' },
+  { value: 24, label: '24 - every 15° (slowest)' },
+];
 
 interface ConfigBarProps {
   config: SolverConfig;
@@ -20,6 +36,13 @@ export function ConfigBar({
   onReSolve,
 }: ConfigBarProps) {
   const defaultUnit: Unit = displayUnit.startsWith('imperial') ? 'in' : 'mm';
+  const mode = solverMode(config);
+
+  // Same `config.kerf` either way - what changes is the tool making the cut. A
+  // router has no saw blade, and a field naming one is a field describing a
+  // machine the user has just said they are not using.
+  const kerfLabel = mode === 'nest' ? 'Cutter Diameter' : 'Saw Blade Kerf';
+  const kerfPlaceholder = mode === 'nest' ? 'e.g. 1/4"' : 'e.g. 1/8"';
 
   const [kerfInput, setKerfInput] = useState('');
   const [kerfError, setKerfError] = useState<string | null>(null);
@@ -80,12 +103,62 @@ export function ConfigBar({
   return (
     <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 backdrop-blur-sm shadow-md flex flex-wrap items-center justify-between gap-4">
       <div className="flex flex-wrap items-center gap-6">
+        {/* Machine.
+            First, and in this bar rather than beside Effort in the header,
+            because it is not a solver knob - it decides what kerf and edge trim
+            mean and what the diagram below is a picture of. */}
+        <div className="flex items-center gap-2">
+          <label
+            htmlFor="machine-select"
+            className="text-xs font-semibold uppercase tracking-wider text-slate-400"
+          >
+            Machine
+          </label>
+          <select
+            id="machine-select"
+            value={mode}
+            onChange={(e) => onConfigChange({ mode: e.target.value as SolverMode })}
+            className="bg-slate-950 text-slate-100 text-sm rounded-lg px-3 py-1.5 border border-slate-700 focus:outline-none focus:ring-1 focus:border-amber-500 focus:ring-amber-500 cursor-pointer"
+          >
+            <option value="guillotine">Table saw</option>
+            <option value="nest">CNC router</option>
+          </select>
+        </div>
+
+        {/* Rotations. Nesting only - a saw has only ever had two orientations,
+            and `allowedAngles` ignores this field in guillotine mode. */}
+        {mode === 'nest' && (
+          <div className="flex items-center gap-2">
+            <label
+              htmlFor="rotations-select"
+              className="text-xs font-semibold uppercase tracking-wider text-slate-400"
+            >
+              Rotations
+            </label>
+            <select
+              id="rotations-select"
+              value={config.rotationSteps ?? DEFAULT_ROTATION_STEPS}
+              onChange={(e) =>
+                onConfigChange({ rotationSteps: Number(e.target.value) as RotationSteps })
+              }
+              title="How many orientations the nester tries for each part. More angles pack tighter and take longer. Grain-locked parts stay at 0° or 180° whatever this says."
+              className="bg-slate-950 text-slate-100 text-sm rounded-lg px-3 py-1.5 border border-slate-700 focus:outline-none focus:ring-1 focus:border-amber-500 focus:ring-amber-500 cursor-pointer"
+            >
+              {ROTATION_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         <div className="flex items-center gap-2">
           <label
             htmlFor="kerf-input"
             className="text-xs font-semibold uppercase tracking-wider text-slate-400"
           >
-            Saw Blade Kerf
+            {kerfLabel}
           </label>
           <div className="relative">
             <input
@@ -99,7 +172,7 @@ export function ConfigBar({
                   ? 'border-red-500 focus:ring-red-500'
                   : 'border-slate-700 focus:border-amber-500 focus:ring-amber-500'
               } text-slate-100 text-sm rounded-lg px-3 py-1.5 font-mono focus:outline-none focus:ring-1`}
-              placeholder='e.g. 1/8"'
+              placeholder={kerfPlaceholder}
             />
             {kerfError && (
               <span className="absolute left-0 top-full mt-1 text-[11px] text-red-400 whitespace-nowrap bg-slate-900 border border-red-900/50 px-2 py-0.5 rounded shadow-lg z-10">

@@ -26,9 +26,19 @@ import { type CSSProperties, useMemo } from 'react';
 import type { CutPlan, CutStep } from '../../domain/cutplan';
 import { type Rect, usableArea } from '../../domain/geometry';
 import { parseStockInstanceId } from '../../domain/instances';
-import { placementRect } from '../../domain/polygon';
-import type { Layout, Material, Part, Placement, SolverConfig, Stock } from '../../domain/types';
+import { placementPolygon, placementRect } from '../../domain/polygon';
+import type {
+  Layout,
+  Material,
+  Part,
+  Placement,
+  Point,
+  SolverConfig,
+  SolverMode,
+  Stock,
+} from '../../domain/types';
 import { formatLength } from '../../domain/units';
+import { solverMode } from '../../domain/validate';
 import { toFormatUnit } from '../format';
 import type { DisplayUnit } from '../state/types';
 import type { SheetTheme } from './sheetTheme';
@@ -114,6 +124,22 @@ function fmtLen(mm: number, displayUnit: DisplayUnit, denominator: number): stri
   });
 }
 
+/**
+ * A point list as an SVG `points` attribute.
+ *
+ * Coordinates are rounded to 0.001mm - a micron, three orders below anything a
+ * router can hold. Full float precision would put seventeen digits per
+ * coordinate into every exported file for a shape with hundreds of vertices,
+ * which is real weight in a download and buys nothing.
+ */
+function pointsAttr(points: readonly Point[]): string {
+  return points.map((p) => `${round3(p.x)},${round3(p.y)}`).join(' ');
+}
+
+function round3(n: number): number {
+  return Math.round(n * 1000) / 1000;
+}
+
 /** Minimum part rect dimension (in mm) to show label text. */
 const MIN_LABEL_SIZE = 40;
 /** Minimum part rect dimension (in mm) to show dimension text below the label. */
@@ -187,6 +213,12 @@ interface PlacedPartRectProps {
   placement: Placement;
   part: Part;
   rect: Rect;
+  /**
+   * Which machine this layout is for. It decides what the drawn boundary
+   * *means*, so it decides what gets drawn: a saw cuts the bounding box, a
+   * router follows the outline. `docs/plan-m7.md` §4.
+   */
+  mode: SolverMode;
   colorIndex: number;
   isHovered: boolean;
   displayUnit: DisplayUnit;
@@ -200,6 +232,7 @@ function PlacedPartRect({
   placement,
   part,
   rect,
+  mode,
   colorIndex,
   isHovered,
   displayUnit,
@@ -228,6 +261,53 @@ function PlacedPartRect({
 
   const interactive = onHoverPart !== undefined;
 
+  /**
+   * The real shape, drawn only when it is not already the rectangle.
+   *
+   * `placementPolygon` answers for every part, outline or not - it is
+   * `partOutline` turned and translated - so the check is on `part.outline`
+   * rather than on the returned points: a hand-entered rectangle would come back
+   * as four corners exactly coincident with `rect`, and drawing that twice is
+   * two hairlines fighting over the same pixels.
+   */
+  const outlinePoints =
+    part.outline !== undefined ? pointsAttr(placementPolygon(part, placement)) : null;
+
+  /**
+   * In nest mode the outline is the cut, so it replaces the box entirely. In
+   * guillotine mode the box is the cut and the outline is a hint drawn inside it.
+   */
+  const drawAsPolygon = mode === 'nest' && outlinePoints !== null;
+  const drawOutlineHint = mode === 'guillotine' && outlinePoints !== null;
+
+  /**
+   * A quarter turn needs no number - `↻` has said "this part is turned" since
+   * M1 and every guillotine layout is 0 or 90. An arbitrary nested angle is real
+   * information the glyph alone throws away.
+   */
+  const rotationMarker =
+    placement.angleDeg === 0
+      ? ''
+      : mode === 'nest' && placement.angleDeg !== 90
+        ? ` ↻${Math.round(placement.angleDeg)}°`
+        : ' ↻';
+
+  const shapeFill = {
+    fill,
+    fillOpacity: isHovered ? theme.partFillOpacityHovered : theme.partFillOpacity,
+    stroke: isHovered ? theme.partStrokeHovered : fill,
+    strokeWidth: isHovered ? 2.5 : 1,
+    vectorEffect: 'non-scaling-stroke' as const,
+  };
+  const shapeGlow = {
+    fill: 'none',
+    stroke: theme.partStrokeHovered,
+    strokeWidth: 4,
+    strokeOpacity: 0.3,
+    vectorEffect: 'non-scaling-stroke' as const,
+    style: { pointerEvents: 'none' as const },
+  };
+
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: SVG <g> groups part rects for hover highlighting — no semantic interactive role applies to SVG groups
     <g
@@ -236,38 +316,58 @@ function PlacedPartRect({
       onMouseLeave={interactive ? () => onHoverPart(null) : undefined}
       style={interactive ? { cursor: 'pointer' } : undefined}
     >
-      {/* Part rectangle */}
-      <rect
-        x={rect.x}
-        y={rect.y}
-        width={rect.width}
-        height={rect.height}
-        fill={fill}
-        fillOpacity={isHovered ? theme.partFillOpacityHovered : theme.partFillOpacity}
-        stroke={isHovered ? theme.partStrokeHovered : fill}
-        strokeWidth={isHovered ? 2.5 : 1}
-        vectorEffect="non-scaling-stroke"
-        rx={1.5}
-        ry={1.5}
-      />
-
-      {/* Hover glow */}
-      {isHovered && (
+      {/* The cut boundary: the outline on a router, the bounding box on a saw.
+          `rx` has no polygon equivalent, and a rounded corner would misstate a
+          shape the router follows literally, so the polygon branch drops it. */}
+      {drawAsPolygon ? (
+        <polygon points={outlinePoints} {...shapeFill} />
+      ) : (
+        // Attribute order matches what this element emitted before M7 PR 8, so
+        // a guillotine sheet exports byte-identically to the golden files.
         <rect
           x={rect.x}
           y={rect.y}
           width={rect.width}
           height={rect.height}
-          fill="none"
-          stroke={theme.partStrokeHovered}
-          strokeWidth={4}
-          strokeOpacity={0.3}
-          vectorEffect="non-scaling-stroke"
+          {...shapeFill}
           rx={1.5}
           ry={1.5}
+        />
+      )}
+
+      {/* The real shape inside the blank, on a saw.
+          The rectangle above is what the blade produces; this says what the
+          user gets out of it once they cut or rout the curve by hand. Faint on
+          purpose - drawn any stronger it reads as a cut the saw is making, which
+          is exactly the confusion `docs/plan-m7.md` §1 criterion 9 is about. */}
+      {drawOutlineHint && (
+        <polygon
+          points={outlinePoints}
+          fill="none"
+          stroke={theme.partOutlineHint}
+          strokeOpacity={theme.partOutlineHintOpacity}
+          strokeWidth={1}
+          strokeDasharray="4 3"
+          vectorEffect="non-scaling-stroke"
           style={{ pointerEvents: 'none' }}
         />
       )}
+
+      {/* Hover glow */}
+      {isHovered &&
+        (drawAsPolygon ? (
+          <polygon points={outlinePoints} {...shapeGlow} />
+        ) : (
+          <rect
+            x={rect.x}
+            y={rect.y}
+            width={rect.width}
+            height={rect.height}
+            {...shapeGlow}
+            rx={1.5}
+            ry={1.5}
+          />
+        ))}
 
       {/* Part label */}
       {showLabel && (
@@ -283,7 +383,7 @@ function PlacedPartRect({
           style={{ pointerEvents: 'none', userSelect: 'none' }}
         >
           {part.label}
-          {placement.angleDeg !== 0 ? ' ↻' : ''}
+          {rotationMarker}
         </text>
       )}
 
@@ -701,6 +801,7 @@ export function SheetFigure({
   showPartNumbers = false,
 }: SheetFigureProps) {
   const usable = useMemo(() => usableArea(stock, config.edgeTrim), [stock, config.edgeTrim]);
+  const mode = solverMode(config);
 
   const partIndexMap = useMemo(() => buildPartIndexMap(parts), [parts]);
 
@@ -830,14 +931,22 @@ export function SheetFigure({
         </text>
       )}
 
-      {/* Kerf cut indicators */}
-      <KerfLines
-        placements={layout.placements}
-        parts={parts}
-        usable={usable}
-        kerf={config.kerf}
-        theme={theme}
-      />
+      {/* Kerf cut indicators.
+          Guillotine only. These are two axis-aligned dashes off a part's
+          bounding box, which is what a blade leaves. A router's clearance is an
+          offset band following the outline all the way round; drawing the saw's
+          version beside a nested part would claim a cut nobody is making.
+          A correct router version needs polygon offsetting, which `plan-m7.md`
+          §2 keeps out of this milestone. */}
+      {mode === 'guillotine' && (
+        <KerfLines
+          placements={layout.placements}
+          parts={parts}
+          usable={usable}
+          kerf={config.kerf}
+          theme={theme}
+        />
+      )}
 
       {/* Placed parts */}
       {layout.placements.map((placement) => {
@@ -853,6 +962,7 @@ export function SheetFigure({
             placement={placement}
             part={part}
             rect={rect}
+            mode={mode}
             colorIndex={colorIndex}
             isHovered={isHovered}
             displayUnit={displayUnit}

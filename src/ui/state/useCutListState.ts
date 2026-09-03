@@ -2,6 +2,7 @@ import { useCallback, useMemo, useReducer } from 'react';
 import { buildCutPlans, type CutPlan } from '../../domain/cutplan';
 import { fitPolygonToBox } from '../../domain/polygon';
 import type { Material, Part, Stock } from '../../domain/types';
+import { solverMode } from '../../domain/validate';
 import { BOOKSHELF_PRESET } from './presets';
 import type {
   AppState,
@@ -201,6 +202,12 @@ export function useCutListState(): CutListStateReturn {
     cutPlanError: string | null;
   }>(() => {
     if (!result) return { cutPlans: [], cutPlanError: null };
+    // A nested layout has no guillotine cut sequence - that is what nesting
+    // means, not a failure to find one. Running the search anyway would spend
+    // the time and then report `invalid` on every sheet, which reads as a bug in
+    // the layout rather than a property of the machine. The UI says so in words
+    // instead; `docs/plan-m7.md` §1 criterion 9.
+    if (solverMode(state.config) === 'nest') return { cutPlans: [], cutPlanError: null };
     try {
       return {
         cutPlans: buildCutPlans(result, {

@@ -15,6 +15,7 @@ import type {
   Stock,
   UnplacedPart,
 } from '../../../domain/types';
+import { DEFAULT_ROTATION_STEPS, solverMode } from '../../../domain/validate';
 import { formatDisplayLength, toFormatUnit } from '../../format';
 import type { DisplayUnit } from '../../state/types';
 import { CutListTable } from './CutListTable';
@@ -43,6 +44,7 @@ export function PrintSummaryPage({
   materialFilterName = null,
 }: PrintSummaryPageProps) {
   const partsById = new Map(parts.map((part) => [part.id, part]));
+  const mode = solverMode(config);
 
   const placedCount = layouts.reduce((sum, entry) => sum + entry.layout.placements.length, 0);
   const unplaced = unplacedParts.filter((entry) => partsById.has(entry.partId));
@@ -85,10 +87,13 @@ export function PrintSummaryPage({
 
       <div className="mt-6 grid grid-cols-2 gap-8 items-start">
         <div>
-          <h3 className="text-sm font-semibold border-b border-slate-400 pb-1">Saw settings</h3>
+          {/* "Machine settings" rather than "Saw settings": this page goes in
+              the shop beside the sheets, and on a nested job there is no saw. */}
+          <h3 className="text-sm font-semibold border-b border-slate-400 pb-1">Machine settings</h3>
           <dl className="mt-2 text-sm">
+            <SettingRow label="Machine" value={mode === 'nest' ? 'CNC router' : 'Table saw'} />
             <SettingRow
-              label="Kerf"
+              label={mode === 'nest' ? 'Cutter diameter' : 'Kerf'}
               value={formatDisplayLength(config.kerf, displayUnit, fractionDenominator)}
             />
             <SettingRow
@@ -97,8 +102,24 @@ export function PrintSummaryPage({
             />
             <SettingRow label="Units" value={unitLabel(displayUnit)} />
             <SettingRow label="Solver effort" value={config.effort ?? 'balanced'} />
+            {mode === 'nest' && (
+              <SettingRow
+                label="Rotations"
+                value={String(config.rotationSteps ?? DEFAULT_ROTATION_STEPS)}
+              />
+            )}
             <SettingRow label="Seed" value={String(config.seed)} />
           </dl>
+
+          {/* The paper is what goes to the machine, so it has to carry the same
+              warning the screen does - a printed nested layout with no note on
+              it is indistinguishable from a table-saw one. */}
+          {mode === 'nest' && (
+            <p className="mt-3 text-xs leading-relaxed">
+              These sheets are nested for a CNC router and have no edge-to-edge cut sequence. They
+              cannot be cut on a table saw.
+            </p>
+          )}
         </div>
 
         <div>
@@ -157,9 +178,13 @@ export function PrintSummaryPage({
         </p>
       )}
 
+      {/* The first two sentences are about a cut sequence, and a nested job has
+          none - printed there they describe something not on the paper. The
+          third holds on any machine, so it is what survives the split. */}
       <p className="mt-6 text-[10px] text-slate-500">
-        Cut sequences are a valid order of operations derived from the layout. They are not
-        reordered to minimise fence or blade-height changes. Check every dimension before cutting.
+        {mode === 'guillotine' &&
+          'Cut sequences are a valid order of operations derived from the layout. They are not reordered to minimise fence or blade-height changes. '}
+        Check every dimension before cutting.
       </p>
     </section>
   );

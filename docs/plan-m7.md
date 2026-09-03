@@ -800,10 +800,88 @@ Exact scope may shift as each PR's own "what shipped" notes get added here.
   plus a new **23.22 kB** `solveWorker` chunk fetched off the critical path. No new dependency,
   per §1 criterion 10.
 
-### PR 8 - `feat/nest-ui` - make it visible
+### PR 8 - `feat/nest-ui` - make it visible - **shipped**
 
 - Machine selector, polygon rendering, DXF polygon output, cut-sequence replacement, the
   guillotine-with-outlines note, and the import preview outline, all per §4.
+
+**What shipped, and what changed on the way.**
+
+- **Mode decides the cut boundary; shape decides the hint. §4 as written would have drawn a lie.**
+  §4 says `PlacedPartRect` renders a `<polygon>` "when the part has an outline" - keyed on shape.
+  Implemented literally, a *table-saw* sheet would show curved parts with gaps between them that no
+  blade makes, underneath a cut-sequence overlay asserting the opposite. Confirmed with the project
+  owner: in nest mode the outline replaces the box, because the outline is the cut; in guillotine
+  mode the box stays the cut and the outline is drawn faintly *inside* it, dashed, in a new
+  `partOutlineHint` theme token. That is strictly more information than either §4's reading or a
+  mode-keyed box - the diagram shows both what the blade produces and what comes out of the blank -
+  and it is what makes §4's "will be cut as rectangles" note visual rather than only textual.
+- **`rotationSteps` got a control, which §4 never asked for.** Confirmed with the owner. The engine
+  has honoured the field since PR 6 and nothing could set it, so every project would have run at 4
+  forever. A nest-mode-only select, labelled by what the user gets ("every 30°") rather than by the
+  count. `RotationSteps` was promoted to a named type in `domain/types.ts` and
+  `DEFAULT_ROTATION_STEPS` exported from `validate.ts` in the same change - a dropdown holding its
+  own copy of the union is how a fifth option appears that the type rejects.
+- **The kerf field is relabelled "Cutter Diameter" on a router.** Also confirmed with the owner.
+  Same `config.kerf` underneath; what changes is that the field stops naming a saw blade to a user
+  who has just said they are not using one. `PrintSummaryPage`'s "Saw settings" heading became
+  "Machine settings" for the same reason - that page goes to the shop beside the sheets.
+- **The printed page carried two statements that are false on a router, and a test caught both.**
+  Neither was in §4's list. The summary's footnote explained how cut sequences are ordered, on
+  every page ever printed, describing something not on a nested printout - only its third sentence
+  ("Check every dimension before cutting") holds on both machines, so that is the half that
+  survives. Worse, `CutListTable` reported any `angleDeg !== 0` as "turned 90°", which was safe
+  when a saw's only other orientation *was* 90°. Verified in the browser at 12 rotation steps: the
+  page now reads "turned 60°" where it would have said 90°. A number an operator checks their setup
+  against has to be the real one, so rows now carry the distinct angles actually used.
+- **`KerfLines` is suppressed in nest mode rather than adapted.** It draws two axis-aligned dashes
+  off a bounding box, which is what a blade leaves. A router's clearance is an offset band following
+  the outline the whole way round; drawing the saw's version beside a nested part claims a cut
+  nobody makes. A correct version needs polygon offsetting, which §2 keeps out of this milestone.
+- **`buildCutPlans` is skipped in nest mode, not left to fail.** `useCutListState` ran it
+  unconditionally on whatever the nester returned. Measured at 3ms on `nest-triangles`, so this is
+  not a performance fix - it is that the only possible outcome was `invalid` on every sheet, which
+  reads as a broken layout rather than a property of the machine. The UI says it in words instead.
+- **The cut-sequence panel is replaced, not just hidden.** The existing `{activePlan !== null &&`
+  gate would have rendered *nothing* in nest mode, which is the silent vanish §1 criterion 9 exists
+  to prevent. A `NoCutSequenceNote` occupies the same grid cell, so switching machines does not
+  resize the diagram, and the toolbar toggle is removed entirely rather than disabled - a disabled
+  control invites the user to wonder what is wrong with their layout, and nothing is.
+- **Attribute order in `PlacedPartRect` was preserved deliberately, and it is why the goldens did
+  not move.** Spreading the shared fill props before `rx`/`ry` rather than after changed nothing but
+  the order of attributes in the emitted markup - enough to fail both SVG golden snapshots. Putting
+  `rx`/`ry` last keeps a guillotine sheet **byte-identical** to what M3 shipped, which is a far
+  stronger claim for review than a regenerated golden file.
+- **`ShapeThumbnail` needed no coordinate work at all.** PR 4's contract - part-local millimetres,
+  origin at the bounding box top-left, y down, bounds exactly the reported size - means the part's
+  own box *is* the viewBox. No transform, no y-flip. A row with no outline draws its four corners
+  rather than an empty cell, so the column always means "this is the shape" and never "we could not
+  tell".
+- **`holeDiscarded`'s message lost its table-saw justification.** It read "A table saw cuts edge to
+  edge, so a hole is not part of the layout", which with a router mode in the product now invites
+  the user to switch machine and expect their holes back. They do not come back - `Part` carries an
+  outer outline only (§7 decision 9). Behaviour unchanged; only the reason given.
+- **A note on both sides of the waste comparison, per §7 decision 4.** Nest mode states that waste
+  is measured against the outline and is not comparable to a saw figure; guillotine mode with
+  outlined parts states that those parts are cut as boxes. Both on `SummaryCard`, which already had
+  `parts` and gained `config`.
+- **Test timings, and a trap worth recording.** The new nest-solving tests time out under Vitest's
+  5s default when files run in parallel - the same contention `test/solver/nest/solver.test.ts`
+  documents from PR 7. Fixed with per-file solve caches (the solver is deterministic, so a cached
+  result is what a second solve would produce) plus explicit budgets in the existing idiom. An
+  intermediate run showed 360s durations and three unrelated failures; that was two full suites
+  running concurrently on this machine, not a regression - a clean run is 34.79s.
+- Verified: `typecheck`, `lint` and `build` clean, `test:run` **1029 passing** (up from 1008), and
+  `npm run bench` leaving `baseline.json` **untouched** - all eleven entries unmoved, true by
+  construction since no file under `src/solver/` changed. Bundle: main chunk 376.63 → 382.85 kB raw
+  and 115.98 → 117.90 kB gzipped for the whole UI change, no new dependency (§1 criterion 10).
+- Browser pass on the production build: the machine selector switches modes and the Rotations select
+  and "Cutter Diameter" label appear with it; an SVG of L-brackets, a curved blob, a triangle and a
+  rectangle imports with all four drawn correctly in the Shape column; in nest mode the triangle
+  renders as a real polygon at an angle with no kerf lines and the "No cut sequence" panel beside
+  it; switching to Table saw brings back the boxes with the triangle dashed inside its own, the cut
+  sequence panel, and the outlines note; and machine, rotation count and the relabelled kerf all
+  survive a reload.
 
 ### PR 9 - `chore/m7-exit-verification` - close it out
 

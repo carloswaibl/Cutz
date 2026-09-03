@@ -252,3 +252,65 @@ describe('the thickness column', () => {
     expect(html).not.toContain('Thickness');
   });
 });
+
+/**
+ * The shape column.
+ *
+ * Cheap to write and the only place in the app where a user sees what the
+ * importer actually extracted *before* committing it. If outline retention
+ * breaks anywhere upstream - the SVG flattener, the STL projector, quantity
+ * grouping's refit - this column draws a rectangle and the user finds out here
+ * rather than at the router.
+ */
+describe('the shape column', () => {
+  /** An L-shape: the simplest outline that a bounding box visibly is not. */
+  const L_OUTLINE = [
+    { x: 0, y: 0 },
+    { x: 600, y: 0 },
+    { x: 600, y: 100 },
+    { x: 200, y: 100 },
+    { x: 200, y: 300 },
+    { x: 0, y: 300 },
+  ];
+
+  it('draws the true outline for a shaped part', () => {
+    const o = outcome(
+      { kind: 'declared', unit: 'mm', mmPerUnit: 1 },
+      {
+        parts: [part({ outline: L_OUTLINE })],
+      },
+    );
+    const html = render([readyFile('f1', o)]);
+
+    expect(html).toContain('Shape');
+    // Every vertex, in order, and no transform: the importer's coordinates are
+    // already part-local millimetres with y down, which is SVG's own system.
+    expect(html).toContain(
+      'points="0.00,0.00 600.00,0.00 600.00,100.00 200.00,100.00 200.00,300.00 0.00,300.00"',
+    );
+    expect(html).toContain('viewBox="0 0 600 300"');
+    expect(html).toContain('Shaped part');
+  });
+
+  it('draws a rectangle for a part that is its own bounding box', () => {
+    // `group.ts` drops the outline when the shape *is* the box, so the column
+    // has to synthesise the corners. Leaving the cell blank would read as "we
+    // could not tell", which is a different and wrong statement.
+    const o = outcome({ kind: 'declared', unit: 'mm', mmPerUnit: 1 });
+    const html = render([readyFile('f1', o)]);
+    expect(html).toContain('points="0,0 600,0 600,300 0,300"');
+    expect(html).toContain('Rectangular part');
+  });
+
+  it('scales every shape into the same thumbnail without distorting it', () => {
+    // `xMidYMid meet` rather than the default `none`: a 2400x100 strip squashed
+    // to fit a square cell is not the shape the user drew.
+    const o = outcome(
+      { kind: 'declared', unit: 'mm', mmPerUnit: 1 },
+      {
+        parts: [part({ outline: L_OUTLINE })],
+      },
+    );
+    expect(render([readyFile('f1', o)])).toContain('preserveAspectRatio="xMidYMid meet"');
+  });
+});

@@ -15,7 +15,7 @@ import { describe, expect, it } from 'vitest';
 import { buildCutPlan, type CutPlan } from '../../src/domain/cutplan';
 import { type Rect, usableArea } from '../../src/domain/geometry';
 import { parseStockInstanceId } from '../../src/domain/instances';
-import { placementRect } from '../../src/domain/polygon';
+import { placementPolygon, placementRect } from '../../src/domain/polygon';
 import type { Layout, Material, Part, SolverConfig, Stock } from '../../src/domain/types';
 import { DXF_LAYERS, renderSheetDxf, sheetToDxf } from '../../src/export/dxf';
 import { solve } from '../../src/solver';
@@ -212,9 +212,21 @@ function sheetsOf(fixture: Fixture): Sheet[] {
   });
 }
 
+/**
+ * Solved first sheets, cached by fixture name.
+ *
+ * A nest fixture takes seconds to solve and several tests want the same one.
+ * The solver is deterministic, so reusing the result is exactly what a second
+ * solve would have produced.
+ */
+const firstSheetCache = new Map<string, Sheet>();
+
 function firstSheet(fixtureName: string): Sheet {
+  const cached = firstSheetCache.get(fixtureName);
+  if (cached) return cached;
   const sheet = sheetsOf(loadFixture(fixtureName))[0];
   if (!sheet) throw new Error(`fixture "${fixtureName}" solved to no layouts`);
+  firstSheetCache.set(fixtureName, sheet);
   return sheet;
 }
 
@@ -348,8 +360,13 @@ describe('renderSheetDxf structure', () => {
   });
 
   it('closes every outline', () => {
-    // Without the closed flag the fourth edge is missing, and a CAM toolpath
+    // Without the closed flag the last edge is missing, and a CAM toolpath
     // built from the outline runs off the end of the part.
+    //
+    // Four points is asserted for a *sawn* sheet specifically: every outline in
+    // one is a rectangle, and a fifth vertex would mean the exporter had started
+    // emitting geometry a table saw cannot produce. A nested sheet is checked
+    // below, where the vertex count is the shape's and not a constant.
     const parsed = parseDxf(render(firstSheet('bookshelf')));
     const polylines = parsed.entities.filter((e) => e.type === 'POLYLINE');
     expect(polylines.length).toBeGreaterThan(0);
@@ -359,6 +376,72 @@ describe('renderSheetDxf structure', () => {
       expect(entity.verticesFollow).toBe(true);
     }
   });
+
+  it('writes a nested part as its true outline, not its bounding box', () => {
+    // The whole point of exporting a nested layout: a router following the
+    // POLYLINE has to trace the part, and a four-point box would cut away every
+    // other part packed into this one's concavities.
+    const sheet = firstSheet('nest-triangles');
+    const parsed = parseDxf(render(sheet, { showCutLines: false }));
+    const outlines = entitiesOn(parsed, DXF_LAYERS.parts, 'POLYLINE');
+    expect(outlines).toHaveLength(sheet.layout.placements.length);
+
+    const partsById = new Map(sheet.parts.map((p) => [p.id, p]));
+    const shaped = sheet.layout.placements.filter(
+      (p) => partsById.get(p.partId)?.outline !== undefined,
+    );
+    expect(shaped.length).toBeGreaterThan(0);
+
+    // Vertex counts are the shapes' own, and every outline still closes.
+    const expectedCounts = sheet.layout.placements
+      .map((p) => placementPolygon(partsById.get(p.partId) as Part, p).length)
+      .sort((a, b) => a - b);
+    expect(outlines.map((e) => e.points.length).sort((a, b) => a - b)).toEqual(expectedCounts);
+    for (const entity of outlines) {
+      expect(entity.closed).toBe(true);
+      expect(entity.verticesFollow).toBe(true);
+    }
+
+    // And the geometry is the real thing, not just the right number of points:
+    // every emitted vertex, flipped and unscaled, is a vertex of the polygon the
+    // validator certified.
+    // `render` defaults to metric-mm, so the scale is 1 and only the Y flip has
+    // to be undone.
+    const scale = UNIT_SCALE['metric-mm'];
+    const expectedVertices = new Set(
+      sheet.layout.placements.flatMap((p) =>
+        placementPolygon(partsById.get(p.partId) as Part, p).map(
+          (pt) => `${pt.x.toFixed(3)},${pt.y.toFixed(3)}`,
+        ),
+      ),
+    );
+    for (const entity of outlines) {
+      for (const pt of entity.points) {
+        const key = `${(pt.x / scale).toFixed(3)},${(sheet.stock.height - pt.y / scale).toFixed(3)}`;
+        expect(expectedVertices).toContain(key);
+      }
+    }
+    // Solving a nested fixture takes seconds, and Vitest runs files in parallel
+    // against a 5s default - the contention `test/solver/nest/solver.test.ts`
+    // documents from M7 PR 7. Same budget as the sweep below.
+  }, 120_000);
+
+  it('names the angle a nested part is turned to', () => {
+    // '(R)' alone dates from M3, when the only rotation was a quarter turn. On a
+    // router it would say a 30° part and a 90° one were the same thing, and the
+    // operator checking the sheet against the file has no other way to tell.
+    const sheet = firstSheet('nest-triangles');
+    const parsed = parseDxf(render(sheet, { showCutLines: false }));
+    const turned = sheet.layout.placements.filter((p) => p.angleDeg !== 0 && p.angleDeg !== 90);
+    expect(turned.length).toBeGreaterThan(0);
+
+    const labels = entitiesOn(parsed, DXF_LAYERS.labels, 'TEXT').map((e) => e.text ?? '');
+    for (const placement of turned) {
+      expect(labels).toContain(
+        `${sheet.parts.find((p) => p.id === placement.partId)?.label} (R${Math.round(placement.angleDeg)})`,
+      );
+    }
+  }, 120_000);
 
   it('is deterministic', () => {
     const sheet = firstSheet('cabinet-carcass');

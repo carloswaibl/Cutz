@@ -211,6 +211,7 @@ export function App() {
                 parts={state.parts}
                 materials={state.materials}
                 stock={state.stock}
+                config={state.config}
               />
 
               <UnplacedAlert
