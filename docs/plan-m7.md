@@ -883,7 +883,7 @@ Exact scope may shift as each PR's own "what shipped" notes get added here.
   sequence panel, and the outlines note; and machine, rotation count and the relabelled kerf all
   survive a reload.
 
-### PR 9 - `chore/m7-exit-verification` - close it out
+### PR 9 - `chore/m7-exit-verification` - close it out - **shipped**
 
 - Browser pass per §1 criterion 11.
 - `CLAUDE.md` "Current status" updated, `src/solver/nest/` and `src/domain/polygon.ts` added
@@ -891,6 +891,75 @@ Exact scope may shift as each PR's own "what shipped" notes get added here.
 - `docs/solver-design.md` extended with the nesting engine, its objective and its invariants,
   alongside the guillotine sections that document M1.
 - Record what shipped and what changed on the way, matching M4-M6's final-PR pattern.
+
+**What shipped, and what changed on the way.**
+
+- **Every criterion-11 step passed, on the production build, and each is recorded here by what was
+  observed rather than by the word "verified".** An SVG of an L-bracket pair, a triangle, a circle
+  and a rectangle plus a real `test/files` STL imported in one drop: the preview's Shape column drew
+  all five correctly, the two identical L-brackets grouped to a quantity of 2, and the rectangle came
+  through with no outline at all. In Table saw mode: 36/36 placed on 3 sheets at 7.5% waste, a
+  20-cut sequence with fence settings, boxes with the shape dashed inside them, and the "cut as
+  rectangles" note under the summary naming 4 of the 5 imported parts. Switching to CNC router:
+  3 sheets at 7.7%, parts nested at angles, the Rotations select and the "Cutter Diameter" relabel
+  appearing with the mode, kerf dashes gone, and the "No cut sequence" panel in the cut sequence's
+  own grid cell. Exports on a nested sheet carry real geometry - the SVG holds 5 `<polygon>` parts
+  plus the grain arrow, and the DXF's 16 polylines include a 64-vertex circle, two 6-vertex
+  brackets, a 3-vertex triangle and a 31-vertex STL outline, on layers `PARTS`/`SHEET`/`TRIM`/
+  `LABELS` with no `CUTS` layer at all. The printed pages read "Machine settings", "Cutter diameter",
+  "Rotations 12" and state that the sheets have no cut sequence. A reload brought back machine,
+  rotation count and kerf. And a genuine pre-M7 record - written straight into IndexedDB with a
+  `config` holding only `kerf`/`edgeTrim`/`seed`/`effort` and parts with no `outline` - opened in
+  Table saw mode and solved to the same 3 sheets at 8.2% M6 produced, with no error and no
+  migration.
+- **One defect found, and it is a defect nesting itself creates: two parts' labels printed on top of
+  each other.** A saw's parts never share sheet area, so a label centred in a part's bounding box
+  always sits on that part's own material. A router packs a neighbour into the concavity - the two
+  boxes overlap *by design* - and at 12 rotation steps the two interlocked L-brackets came out
+  reading `Part 1 ↻240°Part 1 ↻`, naming neither, on screen and on the printed sheet an operator
+  carries to the machine. Fixed in `SheetFigure` with `suppressedLabels`: label boxes are estimated
+  from character count (nothing can measure text when the same component renders to a string for
+  export), the larger part keeps its text, the smaller keeps its numbered badge and its cut-list row.
+  Nest mode only, so guillotine sheets - and the M3 golden SVGs - are untouched. `partTextLayout` was
+  extracted in the same change so the planner and the renderer cannot disagree about where the text
+  is.
+- **The bench fixtures could not reproduce it, and the test says why.** `nest-l-brackets` nests parts
+  that are large next to their own labels. The hazard needs the opposite - parts smaller than the
+  text naming them, which is the ordinary case for imported hardware - so the test hand-places two
+  interlocked brackets rather than solving for them, and asserts both that nest mode drops a label
+  the saw keeps and that no two drawn labels overlap. The overlap check estimates text at a
+  *narrower* advance than the renderer assumes, so it can only fail on a real collision.
+- **One thing was found and deliberately not fixed here: a landscape sheet leaves the diagram panel
+  half empty.** The panel is a fixed `clamp(500px, 72vh, 820px)` tall, which `LayoutViewer` explains
+  at length - sheet goods are portrait, a 4'x8' is 1:2, and a height-bound box is what stops the
+  sheet floating in whitespace. Enter a custom 24"x16" panel and the reasoning inverts: the drawing
+  is width-bound and the box keeps its height anyway. It predates M7 by a milestone, it needs a
+  design decision about sizing the panel from the sheet's aspect ratio, and absorbing that into a
+  closeout PR is how a closeout stops closing anything.
+- **`docs/screenshot.png` was left alone, and that is a change from what this PR planned.** The
+  intent was to re-capture it against the current UI. It turns out there is nothing to re-capture:
+  the existing frame starts below the config bar, so the machine selector M7 added is outside it and
+  the composition is pixel-for-pixel what the app still renders in Table saw mode - confirmed in this
+  pass. The only capture path available was JPEG, so re-shooting it would have swapped a clean PNG
+  for a re-encoded one and changed nothing else. A nest-mode hero was drafted and rejected on
+  honesty grounds: a sheet of small irregular parts reports 40-60% waste *measured against outline
+  area*, which §7 decision 4 says is not the number to read, and a hero image cannot carry that
+  footnote.
+- **`README.md` said the opposite of the product.** Its second bullet read that a layout needing a
+  CNC router "is no use if you own a table saw", which was true through M6 and is now a description
+  of a headline feature. Rewritten around the two machines, plus a bullet for outlines surviving
+  import through to export, kerf reworded as blade width *or* cutter diameter, and the cut-sequence
+  bullet noting that a router has none.
+- **`CLAUDE.md` constraints 3 and 4 now carry their own exceptions inline.** Both were written as
+  flat prohibitions - no nesting, no Web Workers - and both were lifted, with approval, inside M7. A
+  reader who has to find `plan-m7.md` §7 to learn that the worker is allowed will instead read the
+  constraint and conclude the repo violates itself. The parts that still bind are stated as what
+  survives: neither engine may assume it is the only one, and everything other than the solve worker
+  still needs numbers first.
+- Verified: `typecheck`, `lint` and `build` clean, `test:run` **1030 passing** (up from 1029), and
+  `npm run bench` leaving `baseline.json` **untouched** - all eleven entries unmoved, true by
+  construction since no file under `src/solver/` or `src/domain/` changed. Bundle: 382.85 → 383.78 kB
+  raw, 117.90 → 118.37 kB gzipped for the label planner. No new dependency.
 
 ---
 

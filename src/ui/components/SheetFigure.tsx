@@ -145,6 +145,18 @@ const MIN_LABEL_SIZE = 40;
 /** Minimum part rect dimension (in mm) to show dimension text below the label. */
 const MIN_DIM_SIZE = 60;
 
+/**
+ * Average glyph advance, as a fraction of the font size, for the two text
+ * styles this figure draws.
+ *
+ * Nothing here can measure text: the same component renders to a string for SVG
+ * export and to paper, so there is no layout engine to ask. An average advance
+ * is enough, because the only decision it feeds is whether two parts' labels
+ * collide, and both sides of that comparison are estimated the same way.
+ */
+const LABEL_ADVANCE_EM = 0.58;
+const DIM_ADVANCE_EM = 0.6;
+
 /** Floor for the padding inside the SVG viewBox, in mm. */
 const MIN_VIEW_PAD = 8;
 
@@ -205,6 +217,140 @@ export function placementKey(placement: Placement): string {
   return `${placement.partId}-${placement.x}-${placement.y}`;
 }
 
+/**
+ * Everything text-related about one placed part: what it says, how big, where,
+ * and the box it occupies.
+ *
+ * One function rather than two, because the collision planner below and the
+ * component that draws the text have to agree exactly about the box. Computed
+ * twice from two copies of these formulas, they would drift and the planner
+ * would start hiding labels that do not overlap.
+ */
+interface PartTextLayout {
+  labelText: string;
+  dimText: string;
+  fontSize: number;
+  dimFontSize: number;
+  cx: number;
+  cy: number;
+  showLabel: boolean;
+  showDims: boolean;
+  /** Bounding box of whatever is actually drawn, in sheet millimetres. */
+  box: Rect;
+}
+
+function partTextLayout(
+  part: Part,
+  placement: Placement,
+  rect: Rect,
+  mode: SolverMode,
+  displayUnit: DisplayUnit,
+  fractionDenominator: number,
+): PartTextLayout {
+  const showLabel = rect.width >= MIN_LABEL_SIZE && rect.height >= MIN_LABEL_SIZE;
+  const showDims = rect.width >= MIN_DIM_SIZE && rect.height >= MIN_DIM_SIZE;
+
+  /**
+   * A quarter turn needs no number - `↻` has said "this part is turned" since
+   * M1 and every guillotine layout is 0 or 90. An arbitrary nested angle is real
+   * information the glyph alone throws away.
+   */
+  const rotationMarker =
+    placement.angleDeg === 0
+      ? ''
+      : mode === 'nest' && placement.angleDeg !== 90
+        ? ` ↻${Math.round(placement.angleDeg)}°`
+        : ' ↻';
+
+  // Display dimensions are the *part's* original dimensions, not the rect's.
+  // A rotated part shows the same label — it's the same part.
+  const wDisplay = fmtLen(part.width, displayUnit, fractionDenominator);
+  const hDisplay = fmtLen(part.height, displayUnit, fractionDenominator);
+
+  // Font size scales with the smaller dimension, clamped to a readable range.
+  const baseFontSize = Math.min(rect.width, rect.height) * 0.12;
+  const fontSize = Math.max(8, Math.min(baseFontSize, 16));
+  const dimFontSize = fontSize * 0.75;
+
+  const labelText = `${part.label}${rotationMarker}`;
+  const dimText = `${wDisplay} × ${hDisplay}`;
+
+  const cx = rect.x + rect.width / 2;
+  const cy = rect.y + rect.height / 2;
+
+  const labelWidth = showLabel ? labelText.length * fontSize * LABEL_ADVANCE_EM : 0;
+  const dimWidth = showDims ? dimText.length * dimFontSize * DIM_ADVANCE_EM : 0;
+  const width = Math.max(labelWidth, dimWidth);
+  // The label sits half a dim-line above centre and the dims below it, so the
+  // pair spans roughly one label line plus one dim line about `cy`.
+  const height = showDims ? fontSize + dimFontSize * 1.6 : fontSize;
+
+  return {
+    labelText,
+    dimText,
+    fontSize,
+    dimFontSize,
+    cx,
+    cy,
+    showLabel,
+    showDims,
+    box: { x: cx - width / 2, y: cy - height / 2, width, height },
+  };
+}
+
+/**
+ * The placements whose text has to be dropped so no two labels overlap.
+ *
+ * A saw cuts rectangles that never share sheet area, so a label centred in a
+ * part's box always sits on that part's own material, and this returns an empty
+ * set. Nesting breaks that premise: a neighbour packs into the concavity, the
+ * two bounding boxes overlap by design, and two labels centred in them land on
+ * top of each other. Verified on paper before this existed - two interlocked
+ * L-brackets printed as `Part 1 ↻240°Part 1 ↻`, which names neither part.
+ *
+ * The larger part keeps its text, because it is the one with room for it. The
+ * smaller keeps its numbered badge and its row in the cut list, which is where
+ * the dimensions an operator works from actually live.
+ */
+function suppressedLabels(
+  placements: readonly Placement[],
+  parts: Part[],
+  mode: SolverMode,
+  displayUnit: DisplayUnit,
+  fractionDenominator: number,
+): Set<string> {
+  const suppressed = new Set<string>();
+  if (mode !== 'nest') return suppressed;
+
+  const candidates = placements.flatMap((placement, index) => {
+    const part = findPart(parts, placement.partId);
+    if (!part) return [];
+    const rect = placementRect(part, placement);
+    const text = partTextLayout(part, placement, rect, mode, displayUnit, fractionDenominator);
+    if (!text.showLabel) return [];
+    return [{ key: placementKey(placement), index, area: rect.width * rect.height, box: text.box }];
+  });
+
+  // Bigger part wins, and the layout's own order breaks ties, so the same
+  // layout always hides the same labels - the determinism every other part of
+  // this pipeline holds to.
+  candidates.sort((a, b) => b.area - a.area || a.index - b.index);
+
+  const kept: Rect[] = [];
+  for (const candidate of candidates) {
+    if (kept.some((box) => boxesOverlap(box, candidate.box))) {
+      suppressed.add(candidate.key);
+    } else {
+      kept.push(candidate.box);
+    }
+  }
+  return suppressed;
+}
+
+function boxesOverlap(a: Rect, b: Rect): boolean {
+  return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+}
+
 // ---------------------------------------------------------------------------
 // Sub-components rendered inside the SVG
 // ---------------------------------------------------------------------------
@@ -225,6 +371,11 @@ interface PlacedPartRectProps {
   fractionDenominator: number;
   theme: SheetTheme;
   pieceId?: string | undefined;
+  /**
+   * Set when a bigger part's text already covers this spot. Nest mode only -
+   * see `suppressedLabels`.
+   */
+  labelHidden?: boolean;
   onHoverPart?: ((partId: string | null) => void) | undefined;
 }
 
@@ -239,25 +390,15 @@ function PlacedPartRect({
   fractionDenominator,
   theme,
   pieceId,
+  labelHidden = false,
   onHoverPart,
 }: PlacedPartRectProps) {
   const fill = partColor(theme, colorIndex);
-  const showLabel = rect.width >= MIN_LABEL_SIZE && rect.height >= MIN_LABEL_SIZE;
-  const showDims = rect.width >= MIN_DIM_SIZE && rect.height >= MIN_DIM_SIZE;
-
-  // Display dimensions are the *part's* original dimensions, not the rect's.
-  // A rotated part shows the same label — it's the same part.
-  const wDisplay = fmtLen(part.width, displayUnit, fractionDenominator);
-  const hDisplay = fmtLen(part.height, displayUnit, fractionDenominator);
-  const dimText = `${wDisplay} × ${hDisplay}`;
-
-  const cx = rect.x + rect.width / 2;
-  const cy = rect.y + rect.height / 2;
-
-  // Font size scales with the smaller dimension, clamped to a readable range.
-  const baseFontSize = Math.min(rect.width, rect.height) * 0.12;
-  const fontSize = Math.max(8, Math.min(baseFontSize, 16));
-  const dimFontSize = fontSize * 0.75;
+  const text = partTextLayout(part, placement, rect, mode, displayUnit, fractionDenominator);
+  const showLabel = text.showLabel && !labelHidden;
+  const showDims = text.showDims && !labelHidden;
+  const dimText = text.dimText;
+  const { cx, cy, fontSize, dimFontSize } = text;
 
   const interactive = onHoverPart !== undefined;
 
@@ -279,18 +420,6 @@ function PlacedPartRect({
    */
   const drawAsPolygon = mode === 'nest' && outlinePoints !== null;
   const drawOutlineHint = mode === 'guillotine' && outlinePoints !== null;
-
-  /**
-   * A quarter turn needs no number - `↻` has said "this part is turned" since
-   * M1 and every guillotine layout is 0 or 90. An arbitrary nested angle is real
-   * information the glyph alone throws away.
-   */
-  const rotationMarker =
-    placement.angleDeg === 0
-      ? ''
-      : mode === 'nest' && placement.angleDeg !== 90
-        ? ` ↻${Math.round(placement.angleDeg)}°`
-        : ' ↻';
 
   const shapeFill = {
     fill,
@@ -382,8 +511,7 @@ function PlacedPartRect({
           fontFamily="ui-sans-serif, system-ui, sans-serif"
           style={{ pointerEvents: 'none', userSelect: 'none' }}
         >
-          {part.label}
-          {rotationMarker}
+          {text.labelText}
         </text>
       )}
 
@@ -805,6 +933,11 @@ export function SheetFigure({
 
   const partIndexMap = useMemo(() => buildPartIndexMap(parts), [parts]);
 
+  const hiddenLabels = useMemo(
+    () => suppressedLabels(layout.placements, parts, mode, displayUnit, fractionDenominator),
+    [layout.placements, parts, mode, displayUnit, fractionDenominator],
+  );
+
   // Resolve the sheet instance number for labelling (e.g. "Sheet 1")
   const instanceRef = parseStockInstanceId(layout.stockInstanceId);
   const sheetLabel = instanceRef ? `#${instanceRef.index + 1}` : '';
@@ -969,6 +1102,7 @@ export function SheetFigure({
             fractionDenominator={fractionDenominator}
             theme={theme}
             pieceId={pieceIdByPlacement.get(placementKey(placement))}
+            labelHidden={hiddenLabels.has(placementKey(placement))}
             onHoverPart={onHoverPart}
           />
         );

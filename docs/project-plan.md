@@ -141,13 +141,13 @@ Prove the two scary things work before committing. Throwaway code.
 - Post to r/woodworking, r/hobbycnc, Lumberjocks — **still outstanding.** The one manual,
   non-code step; deliberately never an exit criterion, since no PR or test can verify it.
 
-### M7 - CNC free-form nesting *(active)*
-The first v2 milestone, planned in `docs/plan-m7.md`. Everything before this point treats a part as its bounding box, which is correct for a table saw and wrong for a router.
-- True part outlines retained end to end - the importers already compute the polygon and then discard it
-- `Placement` gains an angle; `SolverConfig` gains a machine mode, guillotine staying the default
+### M7 - CNC free-form nesting *(complete)*
+The first v2 milestone, planned in `docs/plan-m7.md`. Everything before this point treated a part as its bounding box, which is correct for a table saw and wrong for a router.
+- True part outlines retained end to end - the importers already computed the polygon and then discarded it
+- `Placement` gained an angle; `SolverConfig` gained a machine mode, guillotine staying the default
 - A raster/bitmask nesting engine behind the existing `Solver` interface, with discrete rotation steps
-- Polygon rendering, SVG/DXF polygon export, and solving moved off the render path
-- **Exit:** an irregular imported part nests at an angle, validates against real polygon geometry, and beats the bounding-box packer by a measured margin on the benchmark set
+- Polygon rendering, SVG/DXF polygon export, and solving moved off the render path into a worker
+- **Exit: met.** On the three irregular fixtures the nester uses **half or two thirds the sheets** a saw needs (1 vs 2, 2 vs 3, 1 vs 2), every nested layout is validated against real polygon geometry, and the eight pre-existing guillotine baselines came through bit-identical. Sheets used is the comparison, not waste: the two modes measure consumed area differently on purpose, `docs/plan-m7.md` §7 decision 4.
 
 ### V2 backlog
 1D linear stock · offcut inventory · G-code · cut sequence optimization for a single operator · multi-sheet cost minimization · nesting parts inside other parts' interior cutouts
