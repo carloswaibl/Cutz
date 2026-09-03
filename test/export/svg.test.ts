@@ -15,8 +15,9 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { buildCutPlan, type CutPlan } from '../../src/domain/cutplan';
-import { placementPolygon } from '../../src/domain/polygon';
+import { placementPolygon, placementRect } from '../../src/domain/polygon';
 import type { Layout, Material, Part, SolverConfig, Stock } from '../../src/domain/types';
+import { renderSheetDxf } from '../../src/export/dxf';
 import { renderSheetSvg } from '../../src/export/svg';
 import { solve } from '../../src/solver';
 import { figureViewBox, SheetFigure } from '../../src/ui/components/SheetFigure';
@@ -366,5 +367,209 @@ describe('mode decides what a part is drawn as', { timeout: NEST_SOLVE_TIMEOUT_M
     const nested = firstSheet('nest-triangles');
     expect(screenMarkup(nested)).not.toContain(SCREEN_THEME.kerfLine);
     expect(screenMarkup(asMode(nested, 'guillotine'))).toContain(SCREEN_THEME.kerfLine);
+  });
+
+  /**
+   * Every part label drawn on a sheet, as the box it occupies.
+   *
+   * Width is estimated at a deliberately *narrower* advance than the renderer
+   * assumes, so this test can only fail on a real overlap and never on the
+   * estimate itself. It reads the markup rather than calling into the renderer's
+   * own helper for the same reason: the property being asserted is what a
+   * woodworker sees on the page.
+   */
+  function labelBoxes(markup: string) {
+    const pattern =
+      /<text x="([-\d.]+)" y="([-\d.]+)" text-anchor="middle" dominant-baseline="central"[^>]*font-size="([\d.]+)" font-weight="600"[^>]*>([^<]*)<\/text>/g;
+    return [...markup.matchAll(pattern)].map((m) => {
+      const x = Number(m[1]);
+      const y = Number(m[2]);
+      const size = Number(m[3]);
+      const width = (m[4] ?? '').length * size * 0.5;
+      return { text: m[4] ?? '', x: x - width / 2, y: y - size / 2, width, height: size };
+    });
+  }
+
+  /**
+   * Two L-brackets interlocked, hand-placed rather than solved.
+   *
+   * The bench fixtures nest parts that are large next to their own labels, so
+   * they do not reproduce this. The hazard needs the opposite: parts small
+   * enough that the text is wider than the material it names, which is the
+   * ordinary case for imported hardware. Written out here so the geometry that
+   * triggers it is visible rather than an emergent property of a solve.
+   */
+  function interlockedBrackets(): Sheet {
+    const material: Material = { id: 'm', name: 'ply', thickness: 18, hasGrain: false };
+    const stock: Stock = {
+      id: 's',
+      materialId: 'm',
+      width: 1200,
+      height: 800,
+      qty: 1,
+      grainAxis: 'y',
+    };
+    const part: Part = {
+      id: 'p-l',
+      label: 'L Bracket',
+      width: 120,
+      height: 100,
+      qty: 2,
+      materialId: 'm',
+      rotationPolicy: 'free90',
+      outline: [
+        { x: 0, y: 0 },
+        { x: 120, y: 0 },
+        { x: 120, y: 30 },
+        { x: 30, y: 30 },
+        { x: 30, y: 100 },
+        { x: 0, y: 100 },
+      ],
+    };
+    return {
+      layout: {
+        stockInstanceId: 's#0',
+        placements: [
+          { partId: 'p-l', stockInstanceId: 's#0', x: 20, y: 20, angleDeg: 0 },
+          // Turned into the first bracket's notch: the two footprints overlap,
+          // which is the whole point of nesting and the reason the labels can.
+          { partId: 'p-l', stockInstanceId: 's#0', x: 70, y: 20, angleDeg: 180 },
+        ],
+        wastePct: 0.5,
+      },
+      stock,
+      material,
+      parts: [part],
+      config: { kerf: 3, edgeTrim: 5, seed: 1, mode: 'nest' },
+      sheetCount: 1,
+    };
+  }
+
+  /** One plain rectangle - no outline anywhere - turned off the axes. */
+  function turnedPlainRect(angleDeg: number): Sheet {
+    const material: Material = { id: 'm', name: 'ply', thickness: 18, hasGrain: false };
+    const stock: Stock = {
+      id: 's',
+      materialId: 'm',
+      width: 1200,
+      height: 800,
+      qty: 1,
+      grainAxis: 'y',
+    };
+    const part: Part = {
+      id: 'p-plate',
+      label: 'Riser Plate',
+      width: 140,
+      height: 90,
+      qty: 1,
+      materialId: 'm',
+      rotationPolicy: 'free90',
+    };
+    return {
+      layout: {
+        stockInstanceId: 's#0',
+        placements: [{ partId: 'p-plate', stockInstanceId: 's#0', x: 100, y: 100, angleDeg }],
+        wastePct: 0.9,
+      },
+      stock,
+      material,
+      parts: [part],
+      config: { kerf: 3, edgeTrim: 5, seed: 1, mode: 'nest' },
+      sheetCount: 1,
+    };
+  }
+
+  it('draws a turned part as the part, not as the box around it', () => {
+    // A hand-entered rectangle has no `outline`, and gating the polygon branch
+    // on that field drew `placementRect` instead: for this 140 x 90 part at 30°
+    // that is 166 x 148, 95% too much area, a different size at every angle, and
+    // visibly overlapping whatever is nested against it. Reported from a real
+    // nested sheet where every rotated plate looked like a different part.
+    const sheet = turnedPlainRect(30);
+    const placement = sheet.layout.placements[0];
+    const part = sheet.parts[0];
+    if (!placement || !part) throw new Error('fixture lost its placement');
+
+    const markup = screenMarkup(sheet);
+    const expected = placementPolygon(part, placement)
+      .map((p) => `${Math.round(p.x * 1000) / 1000},${Math.round(p.y * 1000) / 1000}`)
+      .join(' ');
+    expect(markup).toContain(`points="${expected}"`);
+
+    // And nothing draws the bounding box: it is 166.2 x 147.9 here, so the
+    // width alone is proof enough that no <rect> stands in for the part.
+    const box = placementRect(part, placement);
+    expect(box.width).toBeGreaterThan(part.width);
+    expect(markup).not.toContain(`width="${box.width}"`);
+  });
+
+  it('draws what the DXF cuts, for a turned part with no outline', () => {
+    // `dxf.ts` has always emitted `placementPolygon` in nest mode regardless of
+    // `part.outline`. When this renderer keyed on the outline instead, the two
+    // exports of one layout described different shapes - the failure both
+    // files' headers exist to prevent - and the DXF was the one that was right.
+    const sheet = turnedPlainRect(30);
+    const svg = screenMarkup(sheet);
+    const dxf = renderSheetDxf({
+      layout: sheet.layout,
+      stock: sheet.stock,
+      parts: sheet.parts,
+      material: sheet.material,
+      config: sheet.config,
+      displayUnit: 'metric-mm',
+      fractionDenominator: 16,
+      sheetNumber: 1,
+      sheetCount: 1,
+    });
+
+    const placement = sheet.layout.placements[0];
+    const part = sheet.parts[0];
+    if (!placement || !part) throw new Error('fixture lost its placement');
+    const corners = placementPolygon(part, placement);
+    expect(corners).toHaveLength(4);
+
+    // The SVG carries the polygon literally.
+    const expected = corners
+      .map((p) => `${Math.round(p.x * 1000) / 1000},${Math.round(p.y * 1000) / 1000}`)
+      .join(' ');
+    expect(svg).toContain(`points="${expected}"`);
+
+    // The DXF carries the same four x ordinates on its PARTS layer. Its y axis
+    // points up from the sheet's bottom-left, so only x compares directly.
+    const partsVertices = [...dxf.matchAll(/VERTEX\n\s+8\nPARTS\n\s+10\n([-\d.]+)\n/g)].map((m) =>
+      Number(m[1]),
+    );
+    expect(partsVertices).toHaveLength(4);
+    for (const corner of corners) {
+      expect(partsVertices.some((x) => Math.abs(x - corner.x) < 1e-6)).toBe(true);
+    }
+  });
+
+  it('drops a nested label rather than printing it over another part', () => {
+    // Nesting is what creates the hazard. A saw's parts never share sheet area,
+    // so a label centred in a part's box always sits on that part's material; a
+    // router packs a neighbour into the concavity and the two boxes overlap by
+    // design. Found on paper: two interlocked L-brackets printed as
+    // `Part 1 ↻240°Part 1 ↻`, naming neither.
+    const sheet = interlockedBrackets();
+    const nested = labelBoxes(screenMarkup(sheet));
+    const sawn = labelBoxes(screenMarkup(asMode(sheet, 'guillotine')));
+
+    expect(sawn.length).toBeGreaterThan(0);
+    expect(nested.length).toBeLessThan(sawn.length);
+
+    for (let i = 0; i < nested.length; i++) {
+      for (let j = i + 1; j < nested.length; j++) {
+        const a = nested[i];
+        const b = nested[j];
+        if (!a || !b) continue;
+        const clash =
+          a.x < b.x + b.width &&
+          b.x < a.x + a.width &&
+          a.y < b.y + b.height &&
+          b.y < a.y + a.height;
+        expect(clash, `"${a.text}" overlaps "${b.text}"`).toBe(false);
+      }
+    }
   });
 });
