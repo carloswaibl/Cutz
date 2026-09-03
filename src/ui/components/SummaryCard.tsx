@@ -1,15 +1,19 @@
 import { useMemo } from 'react';
 import { parseStockInstanceId } from '../../domain/instances';
-import type { Material, Part, Result, Stock } from '../../domain/types';
+import type { Material, Part, Result, SolverConfig, Stock } from '../../domain/types';
+import { solverMode } from '../../domain/validate';
 
 interface SummaryCardProps {
   result: Result;
   parts: Part[];
   materials: Material[];
   stock: Stock[];
+  config: SolverConfig;
 }
 
-export function SummaryCard({ result, parts, materials, stock }: SummaryCardProps) {
+export function SummaryCard({ result, parts, materials, stock, config }: SummaryCardProps) {
+  const mode = solverMode(config);
+  const outlinedParts = useMemo(() => parts.filter((p) => p.outline !== undefined).length, [parts]);
   const { totalParts, placedParts, unplacedPartsCount } = useMemo(() => {
     let total = 0;
     for (const p of parts) total += p.qty;
@@ -120,6 +124,33 @@ export function SummaryCard({ result, parts, materials, stock }: SummaryCardProp
             ))}
           </div>
         </div>
+      )}
+
+      {/* What the waste figure above is a fraction of.
+          A part consumes its bounding box on a saw and its outline on a router,
+          which is correct for each machine and means the two percentages answer
+          different questions. `docs/plan-m7.md` §7 decision 4 requires this be
+          stated rather than left for the user to discover by comparing them. */}
+      {mode === 'nest' && outlinedParts > 0 && (
+        <p className="text-xs text-slate-500 leading-relaxed border-t border-slate-800/50 pt-3">
+          Waste is measured against each part's true outline, since the router cuts around it.{' '}
+          <span className="text-slate-400">Table saw waste counts the whole bounding box</span>, so
+          the two figures are not directly comparable - compare sheets used instead.
+        </p>
+      )}
+
+      {/* The reverse case: outlines exist and this machine ignores them. Silent
+          would be a downgrade the user only discovers at the saw. */}
+      {mode === 'guillotine' && outlinedParts > 0 && (
+        <p className="text-xs text-slate-500 leading-relaxed border-t border-slate-800/50 pt-3">
+          {outlinedParts} imported part{outlinedParts !== 1 ? 's carry' : ' carries'} a true
+          outline, shown dashed inside{' '}
+          {outlinedParts !== 1 ? 'their bounding boxes' : 'its bounding box'} on the diagram.{' '}
+          <span className="text-slate-400">
+            A table saw cuts the box; cut or rout the shape afterwards.
+          </span>{' '}
+          Switch the machine to CNC router to nest the real shapes.
+        </p>
       )}
     </div>
   );

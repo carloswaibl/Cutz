@@ -50,6 +50,8 @@ interface CutListRow {
   height: number;
   rotationPolicy: Part['rotationPolicy'];
   rotatedCount: number;
+  /** Distinct non-zero angles these pieces were placed at, ascending. */
+  rotatedAngles: number[];
   pieceIds: string[];
 }
 
@@ -124,12 +126,25 @@ export function CutListTable({
  * Grain lock is a hard constraint, not a preference, so it is stated on every
  * row. A part marked rotatable that the solver actually turned says so too -
  * that is the row where the diagram will not match the reader's expectation.
+ *
+ * The angle is read off the placements rather than assumed to be 90°. It was
+ * safe to assume before M7: a saw has two orientations. A nested part can be at
+ * 180° or 270°, and a page telling an operator that a part turned 270° was
+ * "turned 90°" is worse than one saying nothing - it is a number they would
+ * check their own setup against.
  */
 function grainNote(row: CutListRow): string {
   const base = row.rotationPolicy === 'locked' ? 'Grain locked' : 'Rotatable';
   if (row.rotatedCount === 0) return base;
-  if (row.rotatedCount === row.qty) return `${base} · turned 90°`;
-  return `${base} · ${row.rotatedCount} turned 90°`;
+
+  // Beyond a few distinct angles the list stops being something a reader holds
+  // in their head, and the diagram is the thing to read instead.
+  const angles =
+    row.rotatedAngles.length <= 3
+      ? `turned ${row.rotatedAngles.map((a) => `${Math.round(a)}°`).join('/')}`
+      : 'turned';
+  if (row.rotatedCount === row.qty) return `${base} · ${angles}`;
+  return `${base} · ${row.rotatedCount} ${angles}`;
 }
 
 function buildRows(
@@ -156,19 +171,28 @@ function buildRows(
           height: part.height,
           rotationPolicy: part.rotationPolicy,
           rotatedCount: 0,
+          rotatedAngles: [],
           pieceIds: [],
         };
         rows.set(part.id, row);
       }
       row.qty += 1;
-      if (placement.angleDeg !== 0) row.rotatedCount += 1;
+      if (placement.angleDeg !== 0) {
+        row.rotatedCount += 1;
+        if (!row.rotatedAngles.includes(placement.angleDeg)) {
+          row.rotatedAngles.push(placement.angleDeg);
+        }
+      }
 
       const pieceId = pieceByPlacement.get(placementKey(placement));
       if (pieceId !== undefined) row.pieceIds.push(pieceId);
     }
   }
 
-  for (const row of rows.values()) row.pieceIds.sort();
+  for (const row of rows.values()) {
+    row.pieceIds.sort();
+    row.rotatedAngles.sort((a, b) => a - b);
+  }
   return Array.from(rows.values());
 }
 

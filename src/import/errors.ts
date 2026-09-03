@@ -196,8 +196,13 @@ export function holeDiscarded(count: number): ImportWarning {
     kind: 'hole-discarded',
     count,
     message:
+      // Kept accurate across both machines as of M7. A router *could* follow a
+      // hole, and could nest small parts inside one, but neither is modelled -
+      // `Part` carries an outer outline only. Saying "a table saw cuts edge to
+      // edge" would now read as "switch to the router and you get your holes
+      // back", which is not true. `docs/plan-m7.md` §7 decision 9.
       `${count} interior ${were(count, 'cutout')} discarded. ` +
-      'A table saw cuts edge to edge, so a hole is not part of the layout - ' +
+      "Only a part's outer outline is imported, so a hole is not part of the layout - " +
       'drill or rout it after the sheet is cut. The parts around them are the right size.',
   };
 }

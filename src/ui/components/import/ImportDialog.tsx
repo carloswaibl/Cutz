@@ -488,11 +488,18 @@ export function ImportDialog({
             </summary>
             <div className="px-3 pb-3 flex flex-col gap-2 text-xs text-slate-400 leading-relaxed">
               <p>
-                Shapes become parts as their{' '}
-                <strong className="text-slate-300">bounding box</strong> - the size a table saw
-                would need to cut them, not their true outline. A part drawn or modeled at an angle
-                imports at its real size, with the angle shown so you can check it. Drop several
-                files at once - each is read independently and merged into one list below.
+                Every shape keeps its <strong className="text-slate-300">true outline</strong>,
+                drawn in the Shape column below so you can check it before committing. On a CNC
+                router the layout nests those outlines, packing curved and L-shaped parts inside
+                each other. On a table saw each part is cut as its{' '}
+                <strong className="text-slate-300">bounding box</strong> instead, because a blade
+                runs edge to edge - so the width and height listed here are always the box, on
+                either machine.
+              </p>
+              <p>
+                A part drawn or modeled at an angle imports at its real size, with the angle shown
+                so you can check it. Drop several files at once - each is read independently and
+                merged into one list below.
               </p>
               <p>
                 <strong className="text-slate-300">From an SVG:</strong> paths, rects (including
@@ -512,9 +519,12 @@ export function ImportDialog({
                 <strong className="text-slate-300">Sizing:</strong> when a file states a physical
                 size it's used as-is; when only pixels are given, 96px/inch is assumed and stated on
                 screen; an STL file carries no units at all, so every one is followed by a prompt
-                for its real width before anything can be imported. Interior cutouts (holes) are
-                always discarded, since a table saw cuts edge to edge - drill or rout them after the
-                sheet is cut.
+                for its real width before anything can be imported.
+              </p>
+              <p>
+                <strong className="text-slate-300">Interior cutouts (holes)</strong> are always
+                discarded, on either machine - only a part's outer outline is kept. Drill or rout
+                them after the sheet is cut. Nothing is nested inside another part's holes.
               </p>
             </div>
           </details>

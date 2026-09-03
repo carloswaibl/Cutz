@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildCutPlans } from '../../src/domain/cutplan';
 import { boundsOf, polygonArea } from '../../src/domain/polygon';
 import type { Part } from '../../src/domain/types';
+import { DEFAULT_ROTATION_STEPS, solverMode } from '../../src/domain/validate';
 import { solve } from '../../src/solver/index';
 import { BOOKSHELF_PRESET, DRAWER_BOXES_PRESET, PRESETS } from '../../src/ui/state/presets';
 import type { AppState } from '../../src/ui/state/types';
@@ -68,6 +69,65 @@ describe('Cut plans behind the app state', () => {
         config: preset.config,
       }),
     ).toThrow(/stock entry that is not in the project/);
+  });
+});
+
+/**
+ * The machine selector, from the reducer's side.
+ *
+ * `SET_CONFIG` already took a `Partial<SolverConfig>` before M7 PR 8, so the
+ * selector needed no new action - but that is a claim worth pinning rather than
+ * assuming, because the shallow merge is what keeps kerf, trim and seed alive
+ * across a machine change. A user who switches to the router, looks at the
+ * result and switches back must get the layout they started with.
+ */
+describe('SET_CONFIG carries the machine choice', () => {
+  const base: AppState = {
+    displayUnit: 'imperial-fraction',
+    fractionDenominator: 16,
+    materials: BOOKSHELF_PRESET.materials,
+    parts: BOOKSHELF_PRESET.parts,
+    stock: BOOKSHELF_PRESET.stock,
+    config: BOOKSHELF_PRESET.config,
+    activeSheetIndex: 0,
+    hoveredPartId: null,
+    selectedMaterialId: 'all',
+    showCutSequence: true,
+    projectGeneration: 0,
+  };
+
+  it('defaults to the table saw, so every pre-M7 project opens as one', () => {
+    expect(base.config.mode).toBeUndefined();
+    expect(solverMode(base.config)).toBe('guillotine');
+  });
+
+  it('sets the mode without disturbing the rest of the config', () => {
+    const next = cutListReducer(base, { type: 'SET_CONFIG', config: { mode: 'nest' } });
+    expect(solverMode(next.config)).toBe('nest');
+    expect(next.config.kerf).toBe(base.config.kerf);
+    expect(next.config.edgeTrim).toBe(base.config.edgeTrim);
+    expect(next.config.seed).toBe(base.config.seed);
+    expect(next.config.effort).toBe(base.config.effort);
+  });
+
+  it('round-trips back to the saw with the original config intact', () => {
+    const there = cutListReducer(base, { type: 'SET_CONFIG', config: { mode: 'nest' } });
+    const back = cutListReducer(there, { type: 'SET_CONFIG', config: { mode: 'guillotine' } });
+    expect(back.config).toEqual({ ...base.config, mode: 'guillotine' });
+  });
+
+  it('carries the rotation step count', () => {
+    const next = cutListReducer(base, { type: 'SET_CONFIG', config: { rotationSteps: 12 } });
+    expect(next.config.rotationSteps).toBe(12);
+    // Unset means the engine's own default, not zero orientations.
+    expect(base.config.rotationSteps ?? DEFAULT_ROTATION_STEPS).toBe(4);
+  });
+
+  it('produces a new config object, which is what re-triggers the solve', () => {
+    // `useSolve` depends on `config` by identity. A reducer that mutated in
+    // place would change the machine and leave the old layout on screen.
+    const next = cutListReducer(base, { type: 'SET_CONFIG', config: { mode: 'nest' } });
+    expect(next.config).not.toBe(base.config);
   });
 });
 

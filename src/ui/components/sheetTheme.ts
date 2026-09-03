@@ -36,6 +36,17 @@ export interface SheetTheme {
   partFillOpacityHovered: number;
   /** Outline of a hovered part. Parts are otherwise outlined in their own fill colour. */
   partStrokeHovered: string;
+  /**
+   * The true outline drawn inside a part's bounding box in guillotine mode.
+   *
+   * Only ever a hint: on a table saw the rectangle is what gets cut, so the
+   * shape inside it is information about what the blank contains, not about the
+   * cut. Deliberately faint for that reason - anything stronger reads as a cut
+   * line the saw is going to make. Unused in nest mode, where the outline *is*
+   * the cut and is drawn in the part's own colour.
+   */
+  partOutlineHint: string;
+  partOutlineHintOpacity: number;
   partLabelText: string;
   partLabelTextHovered: string;
   partDimText: string;
@@ -92,6 +103,8 @@ export const SCREEN_THEME: SheetTheme = {
   partFillOpacity: 0.25,
   partFillOpacityHovered: 0.45,
   partStrokeHovered: '#fbbf24',
+  partOutlineHint: '#e2e8f0',
+  partOutlineHintOpacity: 0.45,
   partLabelText: '#f1f5f9',
   partLabelTextHovered: '#fef3c7',
   partDimText: '#94a3b8',
@@ -129,6 +142,10 @@ export const PRINT_THEME: SheetTheme = {
   partFillOpacity: 0.18,
   partFillOpacityHovered: 0.3,
   partStrokeHovered: '#b45309',
+  // Darker than the screen's hint and slightly more opaque: a pale grey line at
+  // 0.45 is legible on a monitor and gone on a photocopy.
+  partOutlineHint: '#64748b',
+  partOutlineHintOpacity: 0.7,
   partLabelText: '#0f172a',
   partLabelTextHovered: '#0f172a',
   partDimText: '#475569',

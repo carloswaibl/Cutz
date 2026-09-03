@@ -33,6 +33,15 @@ export type RotationPolicy = 'locked' | 'free90';
 export type SolverMode = 'guillotine' | 'nest';
 
 /**
+ * How many equally spaced orientations over 360° the nesting engine may try.
+ *
+ * Named rather than written inline on `SolverConfig` because M7 PR 8 put a
+ * control on it, and a UI holding its own copy of the union is how a fifth
+ * option appears in a dropdown that the type rejects.
+ */
+export type RotationSteps = 2 | 4 | 12 | 24;
+
+/**
  * A point in millimetres.
  *
  * This lives here rather than in `polygon.ts` with the operations on it because
@@ -131,7 +140,7 @@ export interface SolverConfig {
    * coarser step count would retroactively invalidate a layout that is already
    * cut.
    */
-  rotationSteps?: 2 | 4 | 12 | 24;
+  rotationSteps?: RotationSteps;
 }
 
 export interface Placement {
